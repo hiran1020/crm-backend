@@ -49,8 +49,44 @@ const leadRecord = z.object({
   value:   z.number().min(0).default(0),
 })
 
+const dealRecord = z.object({
+  title:           z.string().trim().min(1),
+  customerId:      z.string().default(''),
+  customerName:    z.string().default(''),
+  customerCompany: z.string().default(''),
+  amount:          z.number().min(0).default(0),
+  stage:           z.enum(['New', 'Qualified', 'Proposal', 'Negotiation', 'Won', 'Lost']).default('New'),
+  expectedCloseDate: z.string().default(''),
+  description:     z.string().optional(),
+  probability:     z.number().int().min(0).max(100).optional(),
+})
+
+const activityRecord = z.object({
+  type:        z.enum(['call', 'email', 'meeting', 'note', 'task']),
+  title:       z.string().trim().min(1),
+  description: z.string().optional(),
+  completed:   z.boolean().default(false),
+  priority:    z.enum(['low', 'medium', 'high']).optional(),
+  relatedTo:   z.string().optional(),
+  relatedType: z.enum(['customer', 'lead', 'deal']).optional(),
+  relatedName: z.string().optional(),
+  dueDate:     z.preprocess(
+    v => (v == null || v === '' ? undefined : typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v) ? `${v}T00:00:00.000Z` : v),
+    z.string().datetime({ offset: true }).optional(),
+  ),
+})
+
+const ticketRecord = z.object({
+  subject:      z.string().trim().min(1),
+  customerId:   z.string().optional(),
+  customerName: z.string().optional(),
+  status:       z.enum(['Open', 'In_Progress', 'Resolved', 'Closed']).default('Open'),
+  priority:     z.enum(['Low', 'Medium', 'High', 'Critical']).default('Medium'),
+  channel:      z.enum(['email', 'phone', 'chat', 'web']).optional(),
+})
+
 const importBody = z.object({
-  resource: z.enum(['customers', 'leads']),
+  resource: z.enum(['customers', 'leads', 'deals', 'activities', 'tickets']),
   records:  z.array(z.record(z.unknown())).min(1).max(1000),
 })
 
@@ -60,9 +96,11 @@ function initials(name: string): string {
   return name.split(/\s+/).map(w => w[0] ?? '').join('').toUpperCase().slice(0, 2)
 }
 
+type Resource = 'customers' | 'leads' | 'deals' | 'activities' | 'tickets'
+
 async function processJob(
   jobId: string,
-  resource: 'customers' | 'leads',
+  resource: Resource,
   records: Record<string, unknown>[],
   user: { id: string; name: string },
 ) {
@@ -83,7 +121,8 @@ async function processJob(
           tagIds: [], createdAt: now(), updatedAt: now(),
         })
         writeAudit({ entityType: 'customer', entityId: docRef.id, action: 'created', actorId: user.id, after: data })
-      } else {
+
+      } else if (resource === 'leads') {
         const data = leadRecord.parse(raw)
         await docRef.set({
           id: docRef.id, ...data,
@@ -91,11 +130,36 @@ async function processJob(
           tagIds: [], createdAt: now(), updatedAt: now(),
         })
         writeAudit({ entityType: 'lead', entityId: docRef.id, action: 'created', actorId: user.id, after: data })
+
+      } else if (resource === 'deals') {
+        const data = dealRecord.parse(raw)
+        await docRef.set({
+          id: docRef.id, ...data,
+          ownerId: user.id, ownerName: user.name, ownerInitials,
+          createdAt: now(), updatedAt: now(),
+        })
+        writeAudit({ entityType: 'deal', entityId: docRef.id, action: 'created', actorId: user.id, after: data })
+
+      } else if (resource === 'activities') {
+        const data = activityRecord.parse(raw)
+        await docRef.set({
+          id: docRef.id, ...data,
+          owner: raw['owner'] ?? user.name,
+          createdAt: now(), updatedAt: now(),
+        })
+
+      } else if (resource === 'tickets') {
+        const data = ticketRecord.parse(raw)
+        await docRef.set({
+          id: docRef.id, ...data,
+          assigneeId: user.id, assigneeName: user.name,
+          tags: [], createdAt: now(), updatedAt: now(),
+        })
       }
 
       job.succeeded++
     } catch (err) {
-      const identifier = String(raw['email'] ?? raw['name'] ?? `row ${i + 1}`)
+      const identifier = String(raw['email'] ?? raw['name'] ?? raw['title'] ?? raw['subject'] ?? `row ${i + 1}`)
       const message = err instanceof Error
         ? (err.message.length > 120 ? err.message.slice(0, 120) + '…' : err.message)
         : String(err)

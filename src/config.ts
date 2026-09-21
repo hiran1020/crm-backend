@@ -27,6 +27,9 @@ export const config = {
 
   // Service account JSON — not required when Firestore/Auth are both emulated
   firebaseServiceAccount: isEmulator ? '' : required('FIREBASE_SERVICE_ACCOUNT'),
+  // Client-side Web API Key — needed for the sign-in proxy and the /docs page
+  // Find it: Firebase Console → Project Settings → General → Web API Key
+  firebaseWebApiKey: optional('FIREBASE_WEB_API_KEY', ''),
   firebaseStorageBucket:  optional('FIREBASE_STORAGE_BUCKET', 'crm-v1-d8854.firebasestorage.app'),
   firebaseProjectId:      optional('FIREBASE_PROJECT_ID', 'crm-v1-d8854'),
 

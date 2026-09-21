@@ -858,16 +858,15 @@ document.getElementById('btn-signin').onclick = async () => {
   const email = document.getElementById('cfg-email').value.trim();
   const pass  = document.getElementById('cfg-pass').value;
   const status = document.getElementById('auth-status');
-  let authBase = 'http://localhost:9099';
-  try { const u = new URL(base); authBase = `${u.protocol}//${u.hostname}:9099`; } catch {}
   status.textContent = 'Signing in…'; status.className = 'auth-status';
   try {
-    const res = await fetch(`${authBase}/identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=fake-key`, {
+    // Call the backend sign-in proxy — works for both emulator and real Firebase
+    const res = await fetch(`${base}/api/v1/auth/sign-in`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password: pass, returnSecureToken: true }),
+      body: JSON.stringify({ email, password: pass }),
     });
     const data = await res.json();
-    if (!data.idToken) throw new Error(data.error?.message || 'Sign-in failed');
+    if (!data.idToken) throw new Error(data.error || 'Sign-in failed');
     token = data.idToken;
     status.textContent = `✓ ${email}`; status.className = 'auth-status';
     document.getElementById('btn-signin').textContent = 'Refresh';
