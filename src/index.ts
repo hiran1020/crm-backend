@@ -1,13 +1,8 @@
-import 'dotenv/config'
-import { buildApp } from './app.js'
-import { config } from './config.js'
+import { buildApp } from '../src/app.js'
 
 const app = await buildApp()
 
-try {
-  await app.listen({ port: config.port, host: '0.0.0.0' })
-  console.log(`CRM API running on http://0.0.0.0:${config.port}`)
-} catch (err) {
-  app.log.error(err)
-  process.exit(1)
+export default async function handler(req: any, res: any) {
+  await app.ready()
+  app.server.emit('request', req, res)
 }
