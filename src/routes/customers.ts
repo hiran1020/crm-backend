@@ -1,9 +1,7 @@
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { db, toDocs, toDoc, pagedList, now } from '../lib/firebase.js'
-import { handleFirestoreError } from '../lib/errors.js'
 import { authenticate } from '../middleware/authenticate.js'
-import { requireRole } from '../middleware/requireRole.js'
 import { writeAudit } from '../lib/audit.js'
 
 const createBody = z.object({
@@ -99,19 +97,15 @@ export async function customersRoutes(app: FastifyInstance) {
   })
 
   // DELETE /api/v1/customers/:id
-  app.delete(
-    '/:id',
-    { preHandler: [authenticate, requireRole('admin', 'manager')] },
-    async (request, reply) => {
-      const { id } = request.params as { id: string }
-      const snap = await db.collection('customers').doc(id).get()
-      if (!snap.exists) return reply.status(404).send({ error: 'Customer not found' })
-      const before = snap.data()
-      await db.collection('customers').doc(id).delete()
-      writeAudit({ entityType: 'customer', entityId: id, action: 'deleted', actorId: request.user.id, before })
-      return reply.status(204).send()
-    },
-  )
+  app.delete('/:id', { preHandler: authenticate }, async (request, reply) => {
+    const { id } = request.params as { id: string }
+    const snap = await db.collection('customers').doc(id).get()
+    if (!snap.exists) return reply.status(404).send({ error: 'Customer not found' })
+    const before = snap.data()
+    await db.collection('customers').doc(id).delete()
+    writeAudit({ entityType: 'customer', entityId: id, action: 'deleted', actorId: request.user.id, before })
+    return reply.status(204).send()
+  })
 
   // GET /api/v1/customers/:id/deals
   app.get('/:id/deals', { preHandler: authenticate }, async (request, reply) => {

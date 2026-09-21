@@ -8,6 +8,7 @@ export function requireRole(...roles: string[]) {
     }
     if (!roles.includes(request.user.role)) {
       await reply.status(403).send({ error: 'Forbidden: insufficient role' })
+      return
     }
   }
 }

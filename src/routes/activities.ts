@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
-import { db, toDocs, toDoc, pagedList, now } from '../lib/firebase.js'
+import { db, toDoc, pagedList, now } from '../lib/firebase.js'
 import { authenticate } from '../middleware/authenticate.js'
 
 const createBody = z.object({
