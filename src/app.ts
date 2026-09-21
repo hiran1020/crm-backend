@@ -32,8 +32,26 @@ export async function buildApp() {
   // Core plugins
   await app.register(corsPlugin)
 
-  // Health check (unauthenticated)
-  app.get('/health', async () => ({ status: 'ok', timestamp: new Date().toISOString() }))
+  // Health check — probes Firestore and Firebase Auth
+  app.get('/health', async (_req, reply) => {
+    const { db, auth } = await import('./lib/firebase.js')
+    const checks: Record<string, 'ok' | string> = {}
+
+    await db.collection('_health').limit(1).get()
+      .then(() => { checks.firestore = 'ok' })
+      .catch((e: Error) => { checks.firestore = e.message })
+
+    await auth.listUsers(1)
+      .then(() => { checks.firebaseAuth = 'ok' })
+      .catch((e: Error) => { checks.firebaseAuth = e.message })
+
+    const healthy = Object.values(checks).every(v => v === 'ok')
+    return reply.status(healthy ? 200 : 503).send({
+      status: healthy ? 'ok' : 'degraded',
+      timestamp: new Date().toISOString(),
+      checks,
+    })
+  })
 
   // API routes
   await app.register(async (api) => {

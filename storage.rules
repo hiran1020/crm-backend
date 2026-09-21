@@ -1,0 +1,9 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    // All access goes through the backend Admin SDK — deny all direct client access
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

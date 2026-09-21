@@ -5,13 +5,12 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/index.ts",
+    "dev:emu": "FIREBASE_EMULATOR=true tsx watch src/index.ts",
     "build": "tsc",
     "start": "node dist/index.js",
-    "db:migrate": "prisma migrate dev",
-    "db:push": "prisma db push",
-    "db:generate": "prisma generate",
-    "db:studio": "prisma studio",
-    "db:seed": "tsx prisma/seed.ts"
+    "emulator": "npx firebase-tools emulators:start --import=.firebase-data --export-on-exit",
+    "emulator:seed": "FIREBASE_EMULATOR=true tsx src/scripts/seed-emulator.ts",
+    "emulator:reset": "rm -rf .firebase-data"
   },
   "dependencies": {
     "@fastify/cookie": "^11.0.2",
