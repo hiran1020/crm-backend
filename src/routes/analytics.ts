@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify'
-import { db, AggregateField } from '../lib/firebase.js'
+import { db } from '../lib/firebase.js'
 import { authenticate } from '../middleware/authenticate.js'
 
 export async function analyticsRoutes(app: FastifyInstance) {
@@ -32,19 +32,18 @@ export async function analyticsRoutes(app: FastifyInstance) {
   })
 
   // GET /api/v1/analytics/pipeline — deal count + value by stage
-  // Uses aggregate queries (count + sum) — zero document data transferred.
+  // Fetches only stage + amount fields — groups in memory, no composite index needed.
   app.get('/pipeline', { preHandler: authenticate }, async (_request, reply) => {
-    const stages = ['New', 'Qualified', 'Proposal', 'Negotiation', 'Won', 'Lost'] as const
-    const aggs = await Promise.all(
-      stages.map(stage =>
-        db.collection('deals').where('stage', '==', stage)
-          .aggregate({ count: AggregateField.count(), value: AggregateField.sum('amount') })
-          .get()
-      )
-    )
-    const data = aggs
-      .map((agg, i) => ({ stage: stages[i], count: agg.data().count, value: agg.data().value ?? 0 }))
-      .filter(r => r.count > 0)
+    const snap = await db.collection('deals').select('stage', 'amount').get()
+    const byStage: Record<string, { count: number; value: number }> = {}
+    for (const doc of snap.docs) {
+      const { stage, amount } = doc.data()
+      if (!stage) continue
+      if (!byStage[stage]) byStage[stage] = { count: 0, value: 0 }
+      byStage[stage].count++
+      byStage[stage].value += amount ?? 0
+    }
+    const data = Object.entries(byStage).map(([stage, v]) => ({ stage, ...v }))
     return reply.send({ data })
   })
 

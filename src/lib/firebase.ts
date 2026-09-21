@@ -1,5 +1,5 @@
 import { initializeApp, getApps, cert } from 'firebase-admin/app'
-import { getFirestore, FieldValue, Timestamp, AggregateField } from 'firebase-admin/firestore'
+import { getFirestore, FieldValue, Timestamp } from 'firebase-admin/firestore'
 import { getAuth } from 'firebase-admin/auth'
 import { getStorage } from 'firebase-admin/storage'
 import { config } from '../config.js'
@@ -32,7 +32,7 @@ export const db      = getFirestore()
 db.settings({ ignoreUndefinedProperties: true })
 export const auth    = getAuth()
 export const storage = getStorage()
-export { FieldValue, Timestamp, AggregateField }
+export { FieldValue, Timestamp }
 
 // ─── Firestore helpers ────────────────────────────────────────────────────────
 
