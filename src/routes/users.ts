@@ -1,6 +1,7 @@
+import { randomBytes } from 'crypto'
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
-import { auth, db, toDoc, toDocs, countQuery, now } from '../lib/firebase.js'
+import { auth, db, toDoc, pagedList, now } from '../lib/firebase.js'
 import { handleFirestoreError } from '../lib/errors.js'
 import { authenticate } from '../middleware/authenticate.js'
 import { requireRole } from '../middleware/requireRole.js'
@@ -12,7 +13,7 @@ function toInitials(name: string) {
 const createBody = z.object({
   name: z.string().trim().min(1),
   email: z.string().email(),
-  password: z.string().min(8),
+  password: z.string().min(8).optional(),
   role: z.enum(['admin', 'manager', 'sales_agent', 'support']),
   status: z.enum(['active', 'inactive']).default('active'),
   phone: z.string().optional(),
@@ -42,19 +43,20 @@ export async function usersRoutes(app: FastifyInstance) {
       const pageSize = Math.min(100, Math.max(1, parseInt(q.pageSize ?? '20', 10)))
 
       let query = db.collection('users') as FirebaseFirestore.Query
+      const hasFilters = !!(q.role || q.status)
       if (q.role)   query = query.where('role', '==', q.role)
       if (q.status) query = query.where('status', '==', q.status)
 
-      const total = await countQuery(query)
-      const snap = await query.orderBy('name').offset((page - 1) * pageSize).limit(pageSize).get()
-      let data = toDocs(snap)
+      const searchTerm = q.search?.toLowerCase()
+      const inMemoryFilter = searchTerm
+        ? (u: Record<string, unknown>) =>
+            String(u.name ?? '').toLowerCase().includes(searchTerm) ||
+            String(u.email ?? '').toLowerCase().includes(searchTerm)
+        : undefined
 
-      if (q.search) {
-        const s = q.search.toLowerCase()
-        data = data.filter(u =>
-          u.name?.toLowerCase().includes(s) || u.email?.toLowerCase().includes(s),
-        )
-      }
+      const { data, total } = await pagedList({
+        query, hasFilters, orderField: 'name', orderDir: 'asc', page, pageSize, inMemoryFilter,
+      })
 
       return reply.send({ data, total, page, pageSize, totalPages: Math.ceil(total / pageSize) })
     },
@@ -70,10 +72,12 @@ export async function usersRoutes(app: FastifyInstance) {
         return reply.status(400).send({ error: 'Invalid request body', issues: result.error.issues })
       }
       const { password, name, role, ...rest } = result.data
+      // Generate a random 16-char temp password if none provided
+      const resolvedPassword = password ?? randomBytes(12).toString('base64url').slice(0, 16)
 
       try {
         // 1. Create Firebase Auth user
-        const fbUser = await auth.createUser({ email: rest.email, password, displayName: name })
+        const fbUser = await auth.createUser({ email: rest.email, password: resolvedPassword, displayName: name })
         // 2. Set role as custom claim
         await auth.setCustomUserClaims(fbUser.uid, { role })
         // 3. Write profile to Firestore
@@ -143,9 +147,11 @@ export async function usersRoutes(app: FastifyInstance) {
       if (email) update.email = email
       if (role)  update.role  = role
 
-      await db.collection('users').doc(id).update(update)
       const snap = await db.collection('users').doc(id).get()
-      return reply.send(toDoc(snap))
+      if (!snap.exists) return reply.status(404).send({ error: 'User not found' })
+      const updatedAt = new Date().toISOString()
+      await db.collection('users').doc(id).update(update)
+      return reply.send({ id, ...snap.data(), ...update, updatedAt })
     } catch (err) {
       return handleFirestoreError(err, reply) ?? reply.status(500).send({ error: 'Internal server error' })
     }
