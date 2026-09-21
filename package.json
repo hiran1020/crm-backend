@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "dev:emu": "FIREBASE_EMULATOR=true tsx watch src/index.ts",
+    "dev:local": "FIREBASE_EMULATOR=local tsx watch src/index.ts",
     "build": "tsc",
     "start": "node dist/index.js",
     "emulator": "npx firebase-tools emulators:start --import=.firebase-data --export-on-exit",

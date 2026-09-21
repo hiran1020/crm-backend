@@ -4,19 +4,23 @@ import { getAuth } from 'firebase-admin/auth'
 import { getStorage } from 'firebase-admin/storage'
 import { config } from '../config.js'
 
-// Point the Admin SDK to local emulators BEFORE any Firebase getter is called
-if (config.isEmulator) {
-  process.env.FIRESTORE_EMULATOR_HOST     = process.env.FIRESTORE_EMULATOR_HOST     ?? 'localhost:8080'
-  process.env.FIREBASE_AUTH_EMULATOR_HOST = process.env.FIREBASE_AUTH_EMULATOR_HOST ?? 'localhost:9099'
+// Point the Admin SDK to local emulators BEFORE any Firebase getter is called.
+// isEmulator (FIREBASE_EMULATOR=true)  → full emulator stack including Auth
+// isLocalMode (FIREBASE_EMULATOR=local) → Firestore + Storage only; Auth stays real
+if (config.needsDataEmulator) {
+  process.env.FIRESTORE_EMULATOR_HOST       = process.env.FIRESTORE_EMULATOR_HOST       ?? 'localhost:8080'
   process.env.FIREBASE_STORAGE_EMULATOR_HOST = process.env.FIREBASE_STORAGE_EMULATOR_HOST ?? 'localhost:9199'
+}
+if (config.isEmulator) {
+  process.env.FIREBASE_AUTH_EMULATOR_HOST = process.env.FIREBASE_AUTH_EMULATOR_HOST ?? 'localhost:9099'
 }
 
 if (!getApps().length) {
   if (config.isEmulator) {
-    // Emulator mode: no credentials required
+    // Full emulator: no credentials required
     initializeApp({ projectId: config.firebaseProjectId, storageBucket: config.firebaseStorageBucket })
   } else {
-    // Production: use service account JSON from env
+    // Real Firebase Auth (local or prod): service account required for Admin SDK
     initializeApp({
       credential: cert(JSON.parse(config.firebaseServiceAccount)),
       storageBucket: config.firebaseStorageBucket,
