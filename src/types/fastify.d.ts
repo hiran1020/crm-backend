@@ -1,4 +1,5 @@
 import type { UserRole } from '@prisma/client'
+import type { VerifyPayloadType } from '@fastify/jwt'
 
 declare module 'fastify' {
   interface FastifyRequest {
@@ -8,6 +9,15 @@ declare module 'fastify' {
       name: string
       role: UserRole
     }
+    // access-token namespace
+    accessVerify(options?: { onlyCookie?: boolean }): Promise<VerifyPayloadType>
+    // refresh-token namespace
+    refreshVerify(options?: { onlyCookie?: boolean }): Promise<VerifyPayloadType>
+  }
+
+  interface FastifyReply {
+    accessSign(payload: object): Promise<string>
+    refreshSign(payload: object): Promise<string>
   }
 }
 
