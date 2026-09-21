@@ -1,5 +1,5 @@
 import { initializeApp, getApps, cert } from 'firebase-admin/app'
-import { getFirestore, FieldValue, Timestamp } from 'firebase-admin/firestore'
+import { getFirestore, FieldValue, Timestamp, AggregateField } from 'firebase-admin/firestore'
 import { getAuth } from 'firebase-admin/auth'
 import { getStorage } from 'firebase-admin/storage'
 import { config } from '../config.js'
@@ -32,7 +32,7 @@ export const db      = getFirestore()
 db.settings({ ignoreUndefinedProperties: true })
 export const auth    = getAuth()
 export const storage = getStorage()
-export { FieldValue, Timestamp }
+export { FieldValue, Timestamp, AggregateField }
 
 // ─── Firestore helpers ────────────────────────────────────────────────────────
 
@@ -78,16 +78,19 @@ export async function pagedList<T extends DocData>(opts: {
   orderDir?: 'asc' | 'desc'
   page: number
   pageSize: number
+  /** Applied in-memory after sorting, before pagination — enables cross-page search without composite indexes */
+  inMemoryFilter?: (item: T) => boolean
 }): Promise<{ data: T[]; total: number }> {
-  const { query, hasFilters, orderField, orderDir = 'desc', page, pageSize } = opts
+  const { query, hasFilters, orderField, orderDir = 'desc', page, pageSize, inMemoryFilter } = opts
 
-  if (hasFilters) {
+  if (hasFilters || inMemoryFilter) {
     const snap = await query.get()
-    const all = (snap.docs.map(d => ({ id: d.id, ...d.data() })) as unknown as T[]).sort((a, b) => {
+    let all = (snap.docs.map(d => ({ id: d.id, ...d.data() })) as unknown as T[]).sort((a, b) => {
       const av = tsMs((a as Record<string, unknown>)[orderField])
       const bv = tsMs((b as Record<string, unknown>)[orderField])
       return orderDir === 'desc' ? bv - av : av - bv
     })
+    if (inMemoryFilter) all = all.filter(inMemoryFilter)
     const start = (page - 1) * pageSize
     return { data: all.slice(start, start + pageSize), total: all.length }
   }

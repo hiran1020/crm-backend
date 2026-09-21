@@ -39,16 +39,14 @@ export async function dealsRoutes(app: FastifyInstance) {
     if (q.ownerId)    query = query.where('ownerId', '==', q.ownerId)
     if (q.customerId) query = query.where('customerId', '==', q.customerId)
 
-    let { data, total } = await pagedList({ query, hasFilters, orderField: 'createdAt', page, pageSize })
+    const searchTerm = q.search?.toLowerCase()
+    const inMemoryFilter = searchTerm
+      ? (d: Record<string, unknown>) =>
+          String(d.title ?? '').toLowerCase().includes(searchTerm) ||
+          String(d.customerCompany ?? '').toLowerCase().includes(searchTerm)
+      : undefined
 
-    if (q.search) {
-      const s = q.search.toLowerCase()
-      data = data.filter((d: Record<string, unknown>) =>
-        String(d.title ?? '').toLowerCase().includes(s) ||
-        String(d.customerCompany ?? '').toLowerCase().includes(s),
-      )
-    }
-
+    const { data, total } = await pagedList({ query, hasFilters, orderField: 'createdAt', page, pageSize, inMemoryFilter })
     return reply.send({ data, total, page, pageSize, totalPages: Math.ceil(total / pageSize) })
   })
 
@@ -84,10 +82,10 @@ export async function dealsRoutes(app: FastifyInstance) {
     const snap = await db.collection('deals').doc(id).get()
     if (!snap.exists) return reply.status(404).send({ error: 'Deal not found' })
     const before = snap.data()
+    const updatedAt = new Date().toISOString()
     await db.collection('deals').doc(id).update({ ...result.data, updatedAt: now() })
-    const updated = toDoc(await db.collection('deals').doc(id).get())
     writeAudit({ entityType: 'deal', entityId: id, action: 'updated', actorId: request.user.id, before, after: result.data })
-    return reply.send(updated)
+    return reply.send({ id, ...snap.data(), ...result.data, updatedAt })
   })
 
   // DELETE /api/v1/deals/:id
@@ -115,10 +113,10 @@ export async function dealsRoutes(app: FastifyInstance) {
     const snap = await db.collection('deals').doc(id).get()
     if (!snap.exists) return reply.status(404).send({ error: 'Deal not found' })
     const before = snap.data()
+    const updatedAt = new Date().toISOString()
     await db.collection('deals').doc(id).update({ stage: result.data.stage, updatedAt: now() })
-    const updated = toDoc(await db.collection('deals').doc(id).get())
     writeAudit({ entityType: 'deal', entityId: id, action: 'updated', actorId: request.user.id, before, after: { stage: result.data.stage } })
-    return reply.send(updated)
+    return reply.send({ id, ...snap.data(), stage: result.data.stage, updatedAt })
   })
 
   // GET /api/v1/deals/:id/activities

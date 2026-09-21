@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify'
-import { db } from '../lib/firebase.js'
+import { db, AggregateField } from '../lib/firebase.js'
 import { authenticate } from '../middleware/authenticate.js'
 
 export async function analyticsRoutes(app: FastifyInstance) {
@@ -32,16 +32,19 @@ export async function analyticsRoutes(app: FastifyInstance) {
   })
 
   // GET /api/v1/analytics/pipeline — deal count + value by stage
+  // Uses aggregate queries (count + sum) — zero document data transferred.
   app.get('/pipeline', { preHandler: authenticate }, async (_request, reply) => {
-    const snap = await db.collection('deals').get()
-    const byStage: Record<string, { count: number; value: number }> = {}
-    for (const doc of snap.docs) {
-      const { stage, amount } = doc.data()
-      if (!byStage[stage]) byStage[stage] = { count: 0, value: 0 }
-      byStage[stage].count++
-      byStage[stage].value += amount ?? 0
-    }
-    const data = Object.entries(byStage).map(([stage, v]) => ({ stage, ...v }))
+    const stages = ['New', 'Qualified', 'Proposal', 'Negotiation', 'Won', 'Lost'] as const
+    const aggs = await Promise.all(
+      stages.map(stage =>
+        db.collection('deals').where('stage', '==', stage)
+          .aggregate({ count: AggregateField.count(), value: AggregateField.sum('amount') })
+          .get()
+      )
+    )
+    const data = aggs
+      .map((agg, i) => ({ stage: stages[i], count: agg.data().count, value: agg.data().value ?? 0 }))
+      .filter(r => r.count > 0)
     return reply.send({ data })
   })
 
@@ -49,7 +52,7 @@ export async function analyticsRoutes(app: FastifyInstance) {
   app.get('/revenue', { preHandler: authenticate }, async (_request, reply) => {
     const cutoff = new Date()
     cutoff.setMonth(cutoff.getMonth() - 12)
-    const snap = await db.collection('deals').where('stage', '==', 'Won').get()
+    const snap = await db.collection('deals').where('stage', '==', 'Won').select('amount', 'updatedAt', 'createdAt').get()
 
     const byMonth: Record<string, number> = {}
     for (const doc of snap.docs) {
@@ -80,7 +83,7 @@ export async function analyticsRoutes(app: FastifyInstance) {
   app.get('/forecasting/trend', { preHandler: authenticate }, async (_request, reply) => {
     const cutoff = new Date()
     cutoff.setMonth(cutoff.getMonth() - 12)
-    const snap = await db.collection('deals').where('stage', '==', 'Won').get()
+    const snap = await db.collection('deals').where('stage', '==', 'Won').select('amount', 'updatedAt').get()
 
     const byMonth: Record<string, number> = {}
     for (const doc of snap.docs) {

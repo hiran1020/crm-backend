@@ -43,20 +43,19 @@ export async function customersRoutes(app: FastifyInstance) {
     if (q.ownerId) query = query.where('ownerId', '==', q.ownerId)
     if (q.tagId)   query = query.where('tagIds', 'array-contains', q.tagId)
 
-    // customers are ordered by lastName; for filtered queries sort in memory, no composite index needed
-    let { data, total } = await pagedList({
-      query, hasFilters, orderField: 'lastName', orderDir: 'asc', page, pageSize,
-    })
+    const searchTerm = q.search?.toLowerCase()
+    const inMemoryFilter = searchTerm
+      ? (c: Record<string, unknown>) =>
+          String(c.firstName ?? '').toLowerCase().includes(searchTerm) ||
+          String(c.lastName ?? '').toLowerCase().includes(searchTerm) ||
+          String(c.email ?? '').toLowerCase().includes(searchTerm) ||
+          String(c.company ?? '').toLowerCase().includes(searchTerm)
+      : undefined
 
-    if (q.search) {
-      const s = q.search.toLowerCase()
-      data = data.filter((c: Record<string, unknown>) =>
-        String(c.firstName ?? '').toLowerCase().includes(s) ||
-        String(c.lastName ?? '').toLowerCase().includes(s) ||
-        String(c.email ?? '').toLowerCase().includes(s) ||
-        String(c.company ?? '').toLowerCase().includes(s),
-      )
-    }
+    // customers are ordered by lastName; for filtered queries sort in memory, no composite index needed
+    const { data, total } = await pagedList({
+      query, hasFilters, orderField: 'lastName', orderDir: 'asc', page, pageSize, inMemoryFilter,
+    })
 
     return reply.send({ data, total, page, pageSize, totalPages: Math.ceil(total / pageSize) })
   })
@@ -93,10 +92,10 @@ export async function customersRoutes(app: FastifyInstance) {
     const snap = await db.collection('customers').doc(id).get()
     if (!snap.exists) return reply.status(404).send({ error: 'Customer not found' })
     const before = snap.data()
+    const updatedAt = new Date().toISOString()
     await db.collection('customers').doc(id).update({ ...result.data, updatedAt: now() })
-    const updated = toDoc(await db.collection('customers').doc(id).get())
     writeAudit({ entityType: 'customer', entityId: id, action: 'updated', actorId: request.user.id, before, after: result.data })
-    return reply.send(updated)
+    return reply.send({ id, ...snap.data(), ...result.data, updatedAt })
   })
 
   // DELETE /api/v1/customers/:id

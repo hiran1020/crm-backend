@@ -76,8 +76,9 @@ export async function activitiesRoutes(app: FastifyInstance) {
     }
     const snap = await db.collection('activities').doc(id).get()
     if (!snap.exists) return reply.status(404).send({ error: 'Activity not found' })
+    const updatedAt = new Date().toISOString()
     await db.collection('activities').doc(id).update({ ...result.data, updatedAt: now() })
-    return reply.send(toDoc(await db.collection('activities').doc(id).get()))
+    return reply.send({ id, ...snap.data(), ...result.data, updatedAt })
   })
 
   // DELETE /api/v1/activities/:id

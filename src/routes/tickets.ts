@@ -75,8 +75,9 @@ export async function ticketsRoutes(app: FastifyInstance) {
     }
     const snap = await db.collection('tickets').doc(id).get()
     if (!snap.exists) return reply.status(404).send({ error: 'Ticket not found' })
+    const updatedAt = new Date().toISOString()
     await db.collection('tickets').doc(id).update({ ...result.data, updatedAt: now() })
-    return reply.send(toDoc(await db.collection('tickets').doc(id).get()))
+    return reply.send({ id, ...snap.data(), ...result.data, updatedAt })
   })
 
   // DELETE /api/v1/tickets/:id
@@ -95,8 +96,9 @@ export async function ticketsRoutes(app: FastifyInstance) {
     if (!body.success) return reply.status(400).send({ error: 'Invalid status' })
     const snap = await db.collection('tickets').doc(id).get()
     if (!snap.exists) return reply.status(404).send({ error: 'Ticket not found' })
+    const updatedAt = new Date().toISOString()
     await db.collection('tickets').doc(id).update({ status: body.data.status, updatedAt: now() })
-    return reply.send(toDoc(await db.collection('tickets').doc(id).get()))
+    return reply.send({ id, ...snap.data(), status: body.data.status, updatedAt })
   })
 
   // POST /api/v1/tickets/:id/comments

@@ -46,17 +46,15 @@ export async function leadsRoutes(app: FastifyInstance) {
     if (q.ownerId) query = query.where('ownerId', '==', q.ownerId)
     if (q.tagId)   query = query.where('tagIds', 'array-contains', q.tagId)
 
-    let { data, total } = await pagedList({ query, hasFilters, orderField: 'createdAt', page, pageSize })
+    const searchTerm = q.search?.toLowerCase()
+    const inMemoryFilter = searchTerm
+      ? (l: Record<string, unknown>) =>
+          String(l.name ?? '').toLowerCase().includes(searchTerm) ||
+          String(l.email ?? '').toLowerCase().includes(searchTerm) ||
+          String(l.company ?? '').toLowerCase().includes(searchTerm)
+      : undefined
 
-    if (q.search) {
-      const s = q.search.toLowerCase()
-      data = data.filter((l: Record<string, unknown>) =>
-        String(l.name ?? '').toLowerCase().includes(s) ||
-        String(l.email ?? '').toLowerCase().includes(s) ||
-        String(l.company ?? '').toLowerCase().includes(s),
-      )
-    }
-
+    const { data, total } = await pagedList({ query, hasFilters, orderField: 'createdAt', page, pageSize, inMemoryFilter })
     return reply.send({ data, total, page, pageSize, totalPages: Math.ceil(total / pageSize) })
   })
 
@@ -92,10 +90,10 @@ export async function leadsRoutes(app: FastifyInstance) {
     const snap = await db.collection('leads').doc(id).get()
     if (!snap.exists) return reply.status(404).send({ error: 'Lead not found' })
     const before = snap.data()
+    const updatedAt = new Date().toISOString()
     await db.collection('leads').doc(id).update({ ...result.data, updatedAt: now() })
-    const updated = toDoc(await db.collection('leads').doc(id).get())
     writeAudit({ entityType: 'lead', entityId: id, action: 'updated', actorId: request.user.id, before, after: result.data })
-    return reply.send(updated)
+    return reply.send({ id, ...snap.data(), ...result.data, updatedAt })
   })
 
   // DELETE /api/v1/leads/:id
