@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { prisma } from '../lib/prisma.js'
 import { handlePrismaError } from '../lib/errors.js'
 import { authenticate } from '../middleware/authenticate.js'
+import { addClient, removeClient } from '../lib/sse.js'
 
 const createBody = z.object({
   title: z.string().trim().min(1),
@@ -75,6 +76,37 @@ export async function notificationsRoutes(app: FastifyInstance) {
       data: { read: true },
     })
     return reply.send({ message: 'All notifications marked as read' })
+  })
+
+  // GET /api/v1/notifications/stream  — SSE endpoint for real-time notification push
+  app.get('/stream', { preHandler: authenticate }, async (request, reply) => {
+    const userId = request.user.id
+
+    reply.raw.writeHead(200, {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      Connection: 'keep-alive',
+      'X-Accel-Buffering': 'no',
+    })
+    reply.raw.write(':connected\n\n')
+
+    addClient(userId, reply.raw)
+
+    // Flush unread count on connect
+    const unread = await prisma.notification.count({ where: { userId, read: false } })
+    reply.raw.write(`event: unread_count\ndata: ${JSON.stringify({ count: unread })}\n\n`)
+
+    const keepAlive = setInterval(() => {
+      try { reply.raw.write(':heartbeat\n\n') } catch { clearInterval(keepAlive) }
+    }, 25_000)
+
+    request.raw.on('close', () => {
+      clearInterval(keepAlive)
+      removeClient(userId, reply.raw)
+    })
+
+    // Prevent Fastify from auto-closing the response
+    await new Promise<void>(resolve => request.raw.on('close', resolve))
   })
 
   // DELETE /api/v1/notifications/:id

@@ -5,6 +5,7 @@ import { prisma } from '../lib/prisma.js'
 import { handlePrismaError } from '../lib/errors.js'
 import { authenticate } from '../middleware/authenticate.js'
 import { requireRole } from '../middleware/requireRole.js'
+import { writeAudit } from '../lib/audit.js'
 
 const customerInclude = {
   owner: { select: { id: true, name: true, avatarInitials: true } },
@@ -78,6 +79,7 @@ export async function customersRoutes(app: FastifyInstance) {
         },
         include: customerInclude,
       })
+      writeAudit({ entityType: 'customer', entityId: customer.id, action: 'created', actorId: request.user.id, after: customer })
       return reply.status(201).send(customer)
     } catch (err) {
       return handlePrismaError(err, reply) ?? reply.status(500).send({ error: 'Internal server error' })
@@ -101,6 +103,7 @@ export async function customersRoutes(app: FastifyInstance) {
     }
     const { tagIds, ...fields } = result.data
 
+    const existing = await prisma.customer.findUnique({ where: { id } })
     try {
       const customer = await prisma.customer.update({
         where: { id },
@@ -115,6 +118,7 @@ export async function customersRoutes(app: FastifyInstance) {
         },
         include: customerInclude,
       })
+      writeAudit({ entityType: 'customer', entityId: id, action: 'updated', actorId: request.user.id, before: existing, after: customer })
       return reply.send(customer)
     } catch (err) {
       return handlePrismaError(err, reply) ?? reply.status(500).send({ error: 'Internal server error' })
@@ -128,7 +132,8 @@ export async function customersRoutes(app: FastifyInstance) {
     async (request, reply) => {
       const { id } = request.params as { id: string }
       try {
-        await prisma.customer.delete({ where: { id } })
+        const customer = await prisma.customer.delete({ where: { id } })
+        writeAudit({ entityType: 'customer', entityId: id, action: 'deleted', actorId: request.user.id, before: customer })
         return reply.status(204).send()
       } catch (err) {
         return handlePrismaError(err, reply) ?? reply.status(500).send({ error: 'Internal server error' })

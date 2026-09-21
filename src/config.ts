@@ -20,5 +20,14 @@ export const config = {
   jwtAccessExpiry: optional('JWT_ACCESS_EXPIRY', '15m'),
   jwtRefreshExpiry: optional('JWT_REFRESH_EXPIRY', '7d'),
 
+  // Storage (S3 / R2) — optional; falls back to local disk when unset
+  s3Bucket: process.env.S3_BUCKET ?? '',
+  s3Region: optional('S3_REGION', 'us-east-1'),
+  s3Endpoint: process.env.S3_ENDPOINT ?? '',          // set for R2 / MinIO
+  s3PresignExpiry: parseInt(optional('S3_PRESIGN_EXPIRY', '900'), 10), // seconds
+
+  // Redis — required only for the BullMQ worker process
+  redisUrl: optional('REDIS_URL', 'redis://localhost:6379'),
+
   isDev: optional('NODE_ENV', 'development') === 'development',
 } as const

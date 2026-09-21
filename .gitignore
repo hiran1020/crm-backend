@@ -10,6 +10,9 @@ prisma/migrations/
 .DS_Store
 Thumbs.db
 
+# Local file uploads (dev fallback when S3 not configured)
+uploads/
+
 # Logs
 *.log
 logs/

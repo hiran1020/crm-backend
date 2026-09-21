@@ -13,6 +13,13 @@ import { ticketsRoutes } from './routes/tickets.js'
 import { tagsRoutes } from './routes/tags.js'
 import { notificationsRoutes } from './routes/notifications.js'
 import { analyticsRoutes } from './routes/analytics.js'
+import { quotesRoutes } from './routes/quotes.js'
+import { customFieldsRoutes } from './routes/custom-fields.js'
+import { segmentsRoutes } from './routes/segments.js'
+import { workflowsRoutes } from './routes/workflows.js'
+import { auditLogRoutes } from './routes/audit-log.js'
+import { webhooksRoutes } from './routes/webhooks.js'
+import { attachmentsRoutes } from './routes/attachments.js'
 
 export async function buildApp() {
   const app = Fastify({
@@ -43,6 +50,13 @@ export async function buildApp() {
       await v1.register(activitiesRoutes,    { prefix: '/activities' })
       await v1.register(ticketsRoutes,       { prefix: '/tickets' })
       await v1.register(tagsRoutes,          { prefix: '/tags' })
+      await v1.register(quotesRoutes,        { prefix: '/quotes' })
+      await v1.register(customFieldsRoutes,  { prefix: '/custom-fields' })
+      await v1.register(segmentsRoutes,      { prefix: '/segments' })
+      await v1.register(workflowsRoutes,     { prefix: '/workflows' })
+      await v1.register(auditLogRoutes,      { prefix: '/audit-log' })
+      await v1.register(webhooksRoutes,      { prefix: '/webhooks' })
+      await v1.register(attachmentsRoutes,   { prefix: '/attachments' })
       await v1.register(notificationsRoutes, { prefix: '/notifications' })
       await v1.register(analyticsRoutes,     { prefix: '/analytics' })
     }, { prefix: '/v1' })

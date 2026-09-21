@@ -5,6 +5,7 @@ import { prisma } from '../lib/prisma.js'
 import { handlePrismaError } from '../lib/errors.js'
 import { authenticate } from '../middleware/authenticate.js'
 import { requireRole } from '../middleware/requireRole.js'
+import { writeAudit } from '../lib/audit.js'
 
 const leadInclude = {
   owner: { select: { id: true, name: true, avatarInitials: true } },
@@ -86,6 +87,7 @@ export async function leadsRoutes(app: FastifyInstance) {
         },
         include: leadInclude,
       })
+      writeAudit({ entityType: 'lead', entityId: lead.id, action: 'created', actorId: request.user.id, after: lead })
       return reply.status(201).send(lead)
     } catch (err) {
       return handlePrismaError(err, reply) ?? reply.status(500).send({ error: 'Internal server error' })

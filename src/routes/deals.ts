@@ -5,6 +5,7 @@ import { prisma } from '../lib/prisma.js'
 import { handlePrismaError } from '../lib/errors.js'
 import { authenticate } from '../middleware/authenticate.js'
 import { requireRole } from '../middleware/requireRole.js'
+import { writeAudit } from '../lib/audit.js'
 
 const dealInclude = {
   owner: { select: { id: true, name: true, avatarInitials: true } },
@@ -69,6 +70,7 @@ export async function dealsRoutes(app: FastifyInstance) {
 
     try {
       const deal = await prisma.deal.create({ data: result.data, include: dealInclude })
+      writeAudit({ entityType: 'deal', entityId: deal.id, action: 'created', actorId: request.user.id, after: deal })
       return reply.status(201).send(deal)
     } catch (err) {
       return handlePrismaError(err, reply) ?? reply.status(500).send({ error: 'Internal server error' })
@@ -92,7 +94,9 @@ export async function dealsRoutes(app: FastifyInstance) {
     }
 
     try {
+      const existing = await prisma.deal.findUnique({ where: { id } })
       const deal = await prisma.deal.update({ where: { id }, data: result.data, include: dealInclude })
+      writeAudit({ entityType: 'deal', entityId: id, action: 'updated', actorId: request.user.id, before: existing, after: deal })
       return reply.send(deal)
     } catch (err) {
       return handlePrismaError(err, reply) ?? reply.status(500).send({ error: 'Internal server error' })
@@ -123,11 +127,13 @@ export async function dealsRoutes(app: FastifyInstance) {
     }
 
     try {
+      const existing = await prisma.deal.findUnique({ where: { id } })
       const deal = await prisma.deal.update({
         where: { id },
         data: { stage: result.data.stage },
         include: dealInclude,
       })
+      writeAudit({ entityType: 'deal', entityId: id, action: 'updated', actorId: request.user.id, before: existing, after: deal })
       return reply.send(deal)
     } catch (err) {
       return handlePrismaError(err, reply) ?? reply.status(500).send({ error: 'Internal server error' })
