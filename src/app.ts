@@ -1,6 +1,9 @@
+import { readFileSync } from 'fs'
 import Fastify from 'fastify'
 import { config } from './config.js'
 import corsPlugin from './plugins/cors.js'
+
+const docsHtml = readFileSync(new URL('./public/api-docs.html', import.meta.url))
 import { authRoutes } from './routes/auth.js'
 import { usersRoutes } from './routes/users.js'
 import { customersRoutes } from './routes/customers.js'
@@ -31,6 +34,11 @@ export async function buildApp() {
 
   // Core plugins
   await app.register(corsPlugin)
+
+  // API docs — interactive reference served at /docs
+  app.get('/docs', async (_req, reply) => {
+    return reply.header('Content-Type', 'text/html; charset=utf-8').send(docsHtml)
+  })
 
   // Health check — probes Firestore and Firebase Auth
   app.get('/health', async (_req, reply) => {

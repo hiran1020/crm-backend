@@ -1,0 +1,890 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CRM API Reference</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap">
+<style>
+:root {
+  --bg: #0B0D14;
+  --surface: #151820;
+  --elevated: #1F2235;
+  --border: #252A3A;
+  --border-strong: #323750;
+  --accent: #818CF8;
+  --accent-dim: #1A1C35;
+  --accent-hover: #A5B4FC;
+  --text: #E2E8F0;
+  --text-2: #94A3B8;
+  --text-3: #475569;
+  --get: #38BDF8;    --get-bg: #0C2030;
+  --post: #4ADE80;   --post-bg: #0A2015;
+  --patch: #FB923C;  --patch-bg: #251408;
+  --delete: #F87171; --delete-bg: #250A0A;
+  --json-key: #93C5FD; --json-str: #86EFAC;
+  --json-num: #FCA5A5; --json-bool: #A78BFA; --json-null: #94A3B8;
+  --sidebar-w: 264px;
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --bg: #F1F3F9; --surface: #FFFFFF; --elevated: #F8F9FC;
+    --border: #E2E6F0; --border-strong: #C9D0E4;
+    --accent: #6366F1; --accent-dim: #EEF2FF; --accent-hover: #4F46E5;
+    --text: #1E2235; --text-2: #4B5480; --text-3: #94A3B8;
+    --get: #0369A1; --get-bg: #E0F2FE;
+    --post: #15803D; --post-bg: #DCFCE7;
+    --patch: #C2410C; --patch-bg: #FFF7ED;
+    --delete: #BE123C; --delete-bg: #FFF1F2;
+    --json-key: #1D4ED8; --json-str: #15803D;
+    --json-num: #B45309; --json-bool: #7C3AED; --json-null: #64748B;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0B0D14; --surface: #151820; --elevated: #1F2235;
+  --border: #252A3A; --border-strong: #323750;
+  --accent: #818CF8; --accent-dim: #1A1C35; --accent-hover: #A5B4FC;
+  --text: #E2E8F0; --text-2: #94A3B8; --text-3: #475569;
+  --get: #38BDF8; --get-bg: #0C2030; --post: #4ADE80; --post-bg: #0A2015;
+  --patch: #FB923C; --patch-bg: #251408; --delete: #F87171; --delete-bg: #250A0A;
+  --json-key: #93C5FD; --json-str: #86EFAC;
+  --json-num: #FCA5A5; --json-bool: #A78BFA; --json-null: #94A3B8;
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { font-size: 14px; }
+body {
+  font-family: 'Inter', system-ui, sans-serif;
+  background: var(--bg); color: var(--text);
+  height: 100vh; overflow: hidden;
+  display: flex; flex-direction: column;
+}
+code, .mono { font-family: 'JetBrains Mono', monospace; }
+
+/* ── Topbar ── */
+.topbar {
+  height: 52px; background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; gap: 12px;
+  padding-inline: 16px; flex-shrink: 0; z-index: 20;
+}
+.topbar-brand {
+  font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 13px;
+  color: var(--text); display: flex; align-items: center; gap: 8px; white-space: nowrap;
+}
+.topbar-brand .dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--accent); box-shadow: 0 0 8px var(--accent);
+}
+.topbar-divider { width: 1px; height: 24px; background: var(--border); flex-shrink: 0; }
+.config-row { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; }
+.config-input {
+  background: var(--elevated); border: 1px solid var(--border); border-radius: 6px;
+  padding: 5px 10px; color: var(--text); font-family: 'JetBrains Mono', monospace;
+  font-size: 11px; outline: none; min-width: 0; transition: border-color 0.15s;
+}
+.config-input:focus { border-color: var(--accent); }
+.config-input.url { flex: 2; } .config-input.email, .config-input.pass { flex: 1; }
+.btn {
+  padding: 5px 12px; border-radius: 6px; border: none; cursor: pointer;
+  font-size: 12px; font-weight: 500; font-family: 'Inter', sans-serif;
+  white-space: nowrap; transition: all 0.15s;
+}
+.btn-accent { background: var(--accent); color: #fff; }
+.btn-accent:hover { background: var(--accent-hover); }
+.btn-ghost { background: var(--elevated); color: var(--text-2); border: 1px solid var(--border); }
+.btn-ghost:hover { border-color: var(--border-strong); color: var(--text); }
+.auth-status { font-size: 11px; color: var(--post); font-family: 'JetBrains Mono', monospace; white-space: nowrap; }
+.auth-status.error { color: var(--delete); }
+
+/* ── Layout ── */
+.layout { display: flex; flex: 1; min-height: 0; overflow: hidden; }
+
+/* ── Sidebar ── */
+.sidebar {
+  width: var(--sidebar-w); flex-shrink: 0;
+  background: var(--surface); border-right: 1px solid var(--border);
+  overflow-y: auto; overflow-x: hidden; display: flex; flex-direction: column;
+}
+.sidebar-search {
+  padding: 12px; position: sticky; top: 0;
+  background: var(--surface); border-bottom: 1px solid var(--border); z-index: 5;
+}
+.search-input {
+  width: 100%; background: var(--elevated); border: 1px solid var(--border);
+  border-radius: 6px; padding: 6px 10px; color: var(--text); font-size: 12px; outline: none;
+}
+.search-input:focus { border-color: var(--accent); }
+.search-input::placeholder { color: var(--text-3); }
+.resource-group { border-bottom: 1px solid var(--border); }
+.resource-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 8px 12px; cursor: pointer; user-select: none; transition: background 0.1s;
+}
+.resource-header:hover { background: var(--elevated); }
+.resource-name { font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-2); }
+.resource-toggle { color: var(--text-3); font-size: 10px; transition: transform 0.15s; }
+.resource-group.open .resource-toggle { transform: rotate(90deg); }
+.endpoint-list { display: none; }
+.resource-group.open .endpoint-list { display: block; }
+.endpoint-item {
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 12px 6px 16px; cursor: pointer; transition: background 0.1s; min-width: 0;
+}
+.endpoint-item:hover { background: var(--elevated); }
+.endpoint-item.active { background: var(--accent-dim); }
+.endpoint-item.active .ep-path { color: var(--accent-hover); }
+.method-badge {
+  font-family: 'JetBrains Mono', monospace; font-size: 9px; font-weight: 600;
+  padding: 2px 5px; border-radius: 3px; letter-spacing: 0.04em;
+  flex-shrink: 0; width: 46px; text-align: center;
+}
+.method-GET    { color: var(--get);    background: var(--get-bg); }
+.method-POST   { color: var(--post);   background: var(--post-bg); }
+.method-PATCH  { color: var(--patch);  background: var(--patch-bg); }
+.method-DELETE { color: var(--delete); background: var(--delete-bg); }
+.ep-path { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+
+/* ── Main ── */
+.main { flex: 1; overflow-y: auto; display: flex; flex-direction: column; min-width: 0; }
+.welcome {
+  flex: 1; display: flex; align-items: center; justify-content: center;
+  flex-direction: column; gap: 16px; padding: 40px; text-align: center;
+}
+.welcome-icon { font-size: 48px; opacity: 0.15; }
+.welcome h2 { color: var(--text-2); font-size: 16px; font-weight: 500; }
+.welcome p { color: var(--text-3); font-size: 13px; max-width: 340px; line-height: 1.6; }
+.endpoint-detail { padding: 28px 32px; max-width: 860px; }
+.ep-header { margin-bottom: 24px; }
+.ep-title-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 8px; }
+.method-badge-lg { font-family: 'JetBrains Mono', monospace; font-size: 12px; font-weight: 600; padding: 4px 10px; border-radius: 5px; }
+.ep-path-lg { font-family: 'JetBrains Mono', monospace; font-size: 16px; font-weight: 500; color: var(--text); }
+.ep-auth-badge {
+  font-size: 10px; font-weight: 500; padding: 2px 7px; border-radius: 10px;
+  background: var(--elevated); border: 1px solid var(--border); color: var(--text-3); letter-spacing: 0.04em;
+}
+.ep-auth-badge.required { color: var(--patch); border-color: var(--patch-bg); background: var(--patch-bg); }
+.ep-description { color: var(--text-2); font-size: 13px; line-height: 1.65; margin-top: 8px; }
+.section { margin-bottom: 24px; }
+.section-title { font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-3); margin-bottom: 10px; }
+.param-table { width: 100%; border-collapse: collapse; }
+.param-table th, .param-table td { text-align: left; padding: 7px 10px; font-size: 12px; border-bottom: 1px solid var(--border); }
+.param-table th { color: var(--text-3); font-weight: 500; background: var(--elevated); }
+.param-table td { color: var(--text); }
+.param-table td:first-child { font-family: 'JetBrains Mono', monospace; color: var(--accent); }
+.param-table td:nth-child(2) { color: var(--text-3); font-style: italic; }
+.required-dot { color: var(--delete); margin-left: 2px; }
+.code-block {
+  background: var(--elevated); border: 1px solid var(--border); border-radius: 8px;
+  padding: 14px 16px; font-family: 'JetBrains Mono', monospace; font-size: 12px;
+  line-height: 1.6; overflow-x: auto; white-space: pre;
+}
+.response-examples { display: flex; flex-direction: column; gap: 10px; }
+.response-status-row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.status-badge { font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 4px; }
+.s2xx { background: var(--post-bg); color: var(--post); }
+.s4xx { background: var(--patch-bg); color: var(--patch); }
+.s5xx { background: var(--delete-bg); color: var(--delete); }
+.status-desc { font-size: 12px; color: var(--text-2); }
+
+/* ── Try It ── */
+.tryit-section { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; margin-bottom: 24px; }
+.tryit-header { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; border-bottom: 1px solid var(--border); background: var(--elevated); }
+.tryit-header h3 { font-size: 12px; font-weight: 600; color: var(--text-2); letter-spacing: 0.04em; }
+.tryit-body { padding: 16px; display: flex; flex-direction: column; gap: 14px; }
+.tryit-url-row {
+  display: flex; align-items: center; gap: 8px;
+  background: var(--elevated); border: 1px solid var(--border);
+  border-radius: 7px; padding: 8px 12px;
+  font-family: 'JetBrains Mono', monospace; font-size: 12px;
+}
+.tryit-url-method { font-weight: 600; flex-shrink: 0; }
+.tryit-url-text { color: var(--text-2); flex: 1; min-width: 0; word-break: break-all; }
+.tryit-param-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.tryit-field { display: flex; flex-direction: column; gap: 4px; }
+.tryit-label { font-size: 10px; font-weight: 600; color: var(--text-3); letter-spacing: 0.05em; text-transform: uppercase; font-family: 'JetBrains Mono', monospace; }
+.tryit-input {
+  background: var(--bg); border: 1px solid var(--border); border-radius: 5px;
+  padding: 6px 10px; color: var(--text); font-family: 'JetBrains Mono', monospace;
+  font-size: 12px; outline: none; transition: border-color 0.15s; width: 100%;
+}
+.tryit-input:focus { border-color: var(--accent); }
+.tryit-body-area {
+  background: var(--bg); border: 1px solid var(--border); border-radius: 6px;
+  padding: 10px 12px; color: var(--text); font-family: 'JetBrains Mono', monospace;
+  font-size: 12px; line-height: 1.6; resize: vertical; min-height: 120px; outline: none;
+  width: 100%; transition: border-color 0.15s;
+}
+.tryit-body-area:focus { border-color: var(--accent); }
+.tryit-actions { display: flex; align-items: center; gap: 10px; }
+.btn-send {
+  background: var(--accent); color: #fff; border: none; border-radius: 6px;
+  padding: 7px 16px; font-size: 12px; font-weight: 600; cursor: pointer;
+  font-family: 'JetBrains Mono', monospace; letter-spacing: 0.04em; transition: background 0.15s;
+}
+.btn-send:hover { background: var(--accent-hover); }
+.btn-send:disabled { opacity: 0.5; cursor: not-allowed; }
+.tryit-timing { font-size: 11px; color: var(--text-3); font-family: 'JetBrains Mono', monospace; }
+.response-panel { background: var(--bg); border: 1px solid var(--border); border-radius: 7px; overflow: hidden; }
+.response-bar { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-bottom: 1px solid var(--border); background: var(--elevated); }
+.response-code { font-family: 'JetBrains Mono', monospace; font-size: 12px; font-weight: 600; }
+.response-time { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--text-3); }
+.response-body { padding: 12px 14px; font-family: 'JetBrains Mono', monospace; font-size: 12px; line-height: 1.6; overflow-x: auto; white-space: pre; max-height: 360px; overflow-y: auto; }
+.json-key { color: var(--json-key); } .json-str { color: var(--json-str); }
+.json-num { color: var(--json-num); } .json-bool { color: var(--json-bool); } .json-null { color: var(--json-null); }
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 3px; }
+@media (max-width: 680px) {
+  :root { --sidebar-w: 0px; }
+  .sidebar { display: none; }
+  .config-input.email, .config-input.pass { display: none; }
+  .endpoint-detail { padding: 16px; }
+  .tryit-param-grid { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="topbar-brand"><span class="dot"></span>CRM API</div>
+  <div class="topbar-divider"></div>
+  <div class="config-row">
+    <input class="config-input url" id="cfg-base" placeholder="Base URL">
+    <input class="config-input email" id="cfg-email" value="admin@crm.dev" placeholder="email">
+    <input class="config-input pass" id="cfg-pass" value="Admin123!" type="password" placeholder="password">
+    <button class="btn btn-accent" id="btn-signin">Sign In</button>
+    <span class="auth-status" id="auth-status"></span>
+    <div style="flex:1"></div>
+    <button class="btn btn-ghost" id="btn-theme">Theme</button>
+  </div>
+</div>
+
+<div class="layout">
+  <nav class="sidebar" id="sidebar">
+    <div class="sidebar-search">
+      <input class="search-input" id="search" placeholder="Search endpoints…">
+    </div>
+    <div id="nav-tree"></div>
+  </nav>
+  <main class="main" id="main">
+    <div class="welcome" id="welcome">
+      <div class="welcome-icon">⬡</div>
+      <h2>CRM API Reference</h2>
+      <p>Sign in with your Firebase Emulator credentials, then pick any route from the sidebar to view its schema and test it live against this server.</p>
+    </div>
+    <div class="endpoint-detail" id="detail" style="display:none"></div>
+  </main>
+</div>
+
+<script>
+// ── Route data ────────────────────────────────────────────────────────────────
+const resources = [
+  {
+    name: 'Health', prefix: '',
+    endpoints: [
+      { method: 'GET', path: '/health', auth: false,
+        description: 'Probe Firestore and Firebase Auth. Returns 200 when both are reachable; 503 when degraded.',
+        params: [], query: [], body: null,
+        responses: [
+          { status: 200, desc: 'All services healthy', example: { status: 'ok', timestamp: '2026-09-21T08:00:00.000Z', checks: { firestore: 'ok', firebaseAuth: 'ok' } } },
+          { status: 503, desc: 'Degraded', example: { status: 'degraded', checks: { firestore: 'ok', firebaseAuth: 'Connection refused' } } },
+        ] },
+    ],
+  },
+  {
+    name: 'Auth', prefix: '/api/v1/auth',
+    endpoints: [
+      { method: 'GET', path: '/api/v1/auth/me', auth: true,
+        description: "Returns the current user's Firestore profile. On first login returns a minimal record from the token.",
+        params: [], query: [], body: null,
+        responses: [{ status: 200, desc: 'User profile', example: { id: 'FOZ6s...', name: 'Admin User', email: 'admin@crm.dev', role: 'admin', avatarInitials: 'AU' } }] },
+      { method: 'POST', path: '/api/v1/auth/logout', auth: true,
+        description: 'Revokes all Firebase refresh tokens for the current user.',
+        params: [], query: [], body: null,
+        responses: [{ status: 200, desc: 'Logged out', example: { message: 'Logged out' } }] },
+      { method: 'POST', path: '/api/v1/auth/set-role', auth: true, role: 'admin',
+        description: 'Assigns a custom claim role to any user. Admin only.',
+        params: [], query: [],
+        body: { uid: { type: 'string', required: true, desc: 'Firebase Auth UID of target user' }, role: { type: 'enum', required: true, desc: 'admin | manager | sales_agent | support' } },
+        bodyExample: { uid: 'TARGET_UID', role: 'manager' },
+        responses: [
+          { status: 200, desc: 'Role set', example: { uid: 'TARGET_UID', role: 'manager' } },
+          { status: 403, desc: 'Not an admin', example: { error: 'Forbidden' } },
+        ] },
+    ],
+  },
+  {
+    name: 'Users', prefix: '/api/v1/users',
+    endpoints: [
+      { method: 'GET', path: '/api/v1/users', auth: true,
+        description: 'List all users in the Firestore users collection.',
+        params: [], query: [], body: null,
+        responses: [{ status: 200, desc: 'User list', example: { data: [{ id: 'uid1', name: 'Admin User', email: 'admin@crm.dev', role: 'admin', avatarInitials: 'AU' }] } }] },
+      { method: 'GET', path: '/api/v1/users/:id', auth: true,
+        description: 'Get one user by Firestore doc ID.',
+        params: [{ name: 'id', desc: 'User ID' }], query: [], body: null,
+        responses: [{ status: 200, desc: 'User doc', example: { id: 'uid1', name: 'Admin User', role: 'admin' } }, { status: 404, desc: 'Not found', example: { error: 'User not found' } }] },
+      { method: 'PATCH', path: '/api/v1/users/:id', auth: true,
+        description: 'Update user fields.',
+        params: [{ name: 'id', desc: 'User ID' }], query: [],
+        body: { name: { type: 'string', required: false, desc: 'Display name' }, role: { type: 'enum', required: false, desc: 'admin | manager | sales_agent | support' } },
+        bodyExample: { name: 'Sarah Manager', role: 'manager' },
+        responses: [{ status: 200, desc: 'Updated user', example: { id: 'uid1', name: 'Sarah Manager', role: 'manager' } }] },
+    ],
+  },
+  {
+    name: 'Customers', prefix: '/api/v1/customers',
+    endpoints: [
+      { method: 'GET', path: '/api/v1/customers', auth: true,
+        description: 'Paginated customer list. Filter by status, ownerId, tagId. Full-text search across name/email/company.',
+        params: [],
+        query: [{ name: 'page', desc: 'Page number (default 1)' }, { name: 'pageSize', desc: 'Max 100 (default 20)' }, { name: 'status', desc: 'Active | Inactive' }, { name: 'ownerId', desc: 'Filter by owner UID' }, { name: 'tagId', desc: 'Filter by tag ID' }, { name: 'search', desc: 'Text search on name/email/company' }],
+        body: null,
+        responses: [{ status: 200, desc: 'Paginated customers', example: { data: [{ id: 'cid1', firstName: 'James', lastName: 'Wilson', company: 'Acme Corp', status: 'Active' }], total: 10, page: 1, pageSize: 20, totalPages: 1 } }] },
+      { method: 'POST', path: '/api/v1/customers', auth: true,
+        description: 'Create a new customer. Owner fields must be denormalized.',
+        params: [], query: [],
+        body: { firstName: { type: 'string', required: true, desc: 'First name' }, lastName: { type: 'string', required: true, desc: 'Last name' }, email: { type: 'email', required: true, desc: 'Contact email' }, phone: { type: 'string', required: true, desc: 'Phone number' }, company: { type: 'string', required: true, desc: 'Company name' }, jobTitle: { type: 'string', required: true, desc: 'Job title' }, status: { type: 'enum', required: false, desc: 'Active | Inactive (default Active)' }, ownerId: { type: 'string', required: true, desc: 'Owner UID' }, ownerName: { type: 'string', required: true, desc: 'Owner display name' }, ownerInitials: { type: 'string', required: true, desc: 'Owner initials' }, tagIds: { type: 'string[]', required: false, desc: 'Tag IDs' } },
+        bodyExample: { firstName: 'James', lastName: 'Wilson', email: 'jwilson@acme.com', phone: '+1-555-0100', company: 'Acme Corporation', jobTitle: 'CEO', status: 'Active', ownerId: 'OWNER_UID', ownerName: 'Admin User', ownerInitials: 'AU', tagIds: [] },
+        responses: [{ status: 201, desc: 'Customer created', example: { id: 'cid1', firstName: 'James', lastName: 'Wilson', company: 'Acme Corporation', status: 'Active' } }, { status: 400, desc: 'Validation error', example: { error: 'Invalid request body', issues: [] } }] },
+      { method: 'GET', path: '/api/v1/customers/:id', auth: true,
+        description: 'Fetch a single customer by ID.',
+        params: [{ name: 'id', desc: 'Customer ID' }], query: [], body: null,
+        responses: [{ status: 200, desc: 'Customer doc', example: { id: 'cid1', firstName: 'James', lastName: 'Wilson' } }, { status: 404, desc: 'Not found', example: { error: 'Customer not found' } }] },
+      { method: 'PATCH', path: '/api/v1/customers/:id', auth: true,
+        description: 'Partial update — any fields from the create schema.',
+        params: [{ name: 'id', desc: 'Customer ID' }], query: [],
+        body: { status: { type: 'enum', required: false, desc: 'Active | Inactive' }, jobTitle: { type: 'string', required: false, desc: 'Job title' } },
+        bodyExample: { status: 'Inactive', jobTitle: 'Former CEO' },
+        responses: [{ status: 200, desc: 'Updated customer', example: { id: 'cid1', status: 'Inactive', updatedAt: '...' } }] },
+      { method: 'DELETE', path: '/api/v1/customers/:id', auth: true, role: 'admin | manager',
+        description: 'Delete a customer. Requires admin or manager role.',
+        params: [{ name: 'id', desc: 'Customer ID' }], query: [], body: null,
+        responses: [{ status: 204, desc: 'Deleted (no body)', example: null }, { status: 403, desc: 'Insufficient role', example: { error: 'Forbidden' } }] },
+      { method: 'GET', path: '/api/v1/customers/:id/deals', auth: true,
+        description: 'All deals linked to this customer.',
+        params: [{ name: 'id', desc: 'Customer ID' }], query: [], body: null,
+        responses: [{ status: 200, desc: 'Deal list', example: { data: [] } }] },
+      { method: 'GET', path: '/api/v1/customers/:id/activities', auth: true,
+        description: 'All activities where relatedTo = this customer ID.',
+        params: [{ name: 'id', desc: 'Customer ID' }], query: [], body: null,
+        responses: [{ status: 200, desc: 'Activity list', example: { data: [] } }] },
+    ],
+  },
+  {
+    name: 'Leads', prefix: '/api/v1/leads',
+    endpoints: [
+      { method: 'GET', path: '/api/v1/leads', auth: true,
+        description: 'Paginated lead list. Filter by status, source, ownerId, tagId.',
+        params: [],
+        query: [{ name: 'page', desc: 'Page number' }, { name: 'pageSize', desc: 'Items per page' }, { name: 'status', desc: 'New | Contacted | Qualified | Lost | Converted' }, { name: 'source', desc: 'Website | Referral | Trade_Show | Cold_Call | Email_Campaign | Social_Media | Partner' }, { name: 'ownerId', desc: 'Filter by owner' }, { name: 'search', desc: 'Text search' }],
+        body: null,
+        responses: [{ status: 200, desc: 'Paginated leads', example: { data: [{ id: 'lid1', name: 'Alice Johnson', company: 'Startup Alpha', status: 'New', value: 12000 }], total: 8, page: 1, pageSize: 20, totalPages: 1 } }] },
+      { method: 'POST', path: '/api/v1/leads', auth: true,
+        description: 'Create a new lead.',
+        params: [], query: [],
+        body: { name: { type: 'string', required: true, desc: 'Full name' }, company: { type: 'string', required: true, desc: 'Company' }, email: { type: 'email', required: true, desc: 'Email' }, phone: { type: 'string', required: false, desc: 'Phone' }, source: { type: 'enum', required: true, desc: 'Website | Referral | Trade_Show | Cold_Call | Email_Campaign | Social_Media | Partner' }, status: { type: 'enum', required: false, desc: 'New | Contacted | Qualified | Lost | Converted (default New)' }, value: { type: 'number', required: true, desc: 'Estimated value' }, ownerId: { type: 'string', required: true, desc: 'Owner UID' }, ownerName: { type: 'string', required: true, desc: 'Owner name' }, ownerInitials: { type: 'string', required: true, desc: 'Owner initials' } },
+        bodyExample: { name: 'Alice Johnson', company: 'Startup Alpha', email: 'alice@startup-alpha.com', source: 'Website', status: 'New', value: 12000, ownerId: 'OWNER_UID', ownerName: 'Admin User', ownerInitials: 'AU' },
+        responses: [{ status: 201, desc: 'Lead created', example: { id: 'lid1', name: 'Alice Johnson', status: 'New', value: 12000 } }] },
+      { method: 'GET', path: '/api/v1/leads/:id', auth: true,
+        description: 'Get a single lead.',
+        params: [{ name: 'id', desc: 'Lead ID' }], query: [], body: null,
+        responses: [{ status: 200, desc: 'Lead doc', example: { id: 'lid1', name: 'Alice Johnson', status: 'New' } }, { status: 404, desc: 'Not found', example: { error: 'Lead not found' } }] },
+      { method: 'PATCH', path: '/api/v1/leads/:id', auth: true,
+        description: 'Update any lead field.',
+        params: [{ name: 'id', desc: 'Lead ID' }], query: [],
+        body: { status: { type: 'enum', required: false, desc: 'New | Contacted | Qualified | Lost | Converted' }, value: { type: 'number', required: false, desc: 'Updated value' } },
+        bodyExample: { status: 'Contacted', value: 15000 },
+        responses: [{ status: 200, desc: 'Updated lead', example: { id: 'lid1', status: 'Contacted' } }] },
+      { method: 'DELETE', path: '/api/v1/leads/:id', auth: true, role: 'admin | manager',
+        description: 'Delete a lead.',
+        params: [{ name: 'id', desc: 'Lead ID' }], query: [], body: null,
+        responses: [{ status: 204, desc: 'Deleted', example: null }] },
+      { method: 'POST', path: '/api/v1/leads/:id/convert', auth: true,
+        description: 'Convert lead to Customer in one batch. Returns 409 if already converted.',
+        params: [{ name: 'id', desc: 'Lead ID' }], query: [],
+        body: { firstName: { type: 'string', required: true, desc: 'First name for new customer' }, lastName: { type: 'string', required: true, desc: 'Last name' }, phone: { type: 'string', required: false, desc: 'Phone' }, jobTitle: { type: 'string', required: false, desc: 'Job title' }, ownerId: { type: 'string', required: false, desc: 'Override owner UID' }, ownerName: { type: 'string', required: false, desc: 'Override owner name' }, ownerInitials: { type: 'string', required: false, desc: 'Override initials' } },
+        bodyExample: { firstName: 'Alice', lastName: 'Johnson', jobTitle: 'Founder', ownerId: 'OWNER_UID', ownerName: 'Admin User', ownerInitials: 'AU' },
+        responses: [{ status: 201, desc: 'Customer created from lead', example: { id: 'cid2', firstName: 'Alice', lastName: 'Johnson', status: 'Active' } }, { status: 409, desc: 'Already converted', example: { error: 'Lead already converted' } }] },
+    ],
+  },
+  {
+    name: 'Deals', prefix: '/api/v1/deals',
+    endpoints: [
+      { method: 'GET', path: '/api/v1/deals', auth: true,
+        description: 'Paginated deal pipeline. Filter by stage, ownerId, customerId.',
+        params: [],
+        query: [{ name: 'page', desc: 'Page number' }, { name: 'pageSize', desc: 'Items per page' }, { name: 'stage', desc: 'New | Qualified | Proposal | Negotiation | Won | Lost' }, { name: 'ownerId', desc: 'Filter by owner' }, { name: 'customerId', desc: 'Filter by customer' }, { name: 'search', desc: 'Text search on title/company' }],
+        body: null,
+        responses: [{ status: 200, desc: 'Paginated deals', example: { data: [{ id: 'did1', title: 'Enterprise License', stage: 'Negotiation', amount: 120000, probability: 70 }], total: 10 } }] },
+      { method: 'POST', path: '/api/v1/deals', auth: true,
+        description: 'Create a new deal.',
+        params: [], query: [],
+        body: { title: { type: 'string', required: true, desc: 'Deal name' }, customerId: { type: 'string', required: true, desc: 'Linked customer ID' }, customerName: { type: 'string', required: true, desc: 'Customer name (denormalized)' }, customerCompany: { type: 'string', required: true, desc: 'Company (denormalized)' }, amount: { type: 'number', required: true, desc: 'Deal value' }, stage: { type: 'enum', required: false, desc: 'New | Qualified | Proposal | Negotiation | Won | Lost' }, ownerId: { type: 'string', required: true, desc: 'Owner UID' }, ownerName: { type: 'string', required: true, desc: 'Owner name' }, ownerInitials: { type: 'string', required: true, desc: 'Owner initials' }, expectedCloseDate: { type: 'string', required: true, desc: 'YYYY-MM-DD' }, probability: { type: 'number', required: false, desc: '0–100 win probability' } },
+        bodyExample: { title: 'Enterprise License — Acme', customerId: 'CUST_ID', customerName: 'James Wilson', customerCompany: 'Acme Corporation', amount: 120000, stage: 'Qualified', probability: 30, expectedCloseDate: '2026-12-31', ownerId: 'OWNER_UID', ownerName: 'Admin User', ownerInitials: 'AU' },
+        responses: [{ status: 201, desc: 'Deal created', example: { id: 'did1', title: 'Enterprise License — Acme', stage: 'Qualified', amount: 120000 } }] },
+      { method: 'GET', path: '/api/v1/deals/:id', auth: true, description: 'Get a single deal.',
+        params: [{ name: 'id', desc: 'Deal ID' }], query: [], body: null,
+        responses: [{ status: 200, desc: 'Deal doc', example: { id: 'did1', title: 'Enterprise License', stage: 'Negotiation' } }] },
+      { method: 'PATCH', path: '/api/v1/deals/:id', auth: true, description: 'Update deal fields.',
+        params: [{ name: 'id', desc: 'Deal ID' }], query: [],
+        body: { amount: { type: 'number', required: false, desc: 'Updated amount' }, probability: { type: 'number', required: false, desc: 'Win probability 0–100' } },
+        bodyExample: { amount: 130000, probability: 75 },
+        responses: [{ status: 200, desc: 'Updated deal', example: { id: 'did1', amount: 130000, probability: 75 } }] },
+      { method: 'DELETE', path: '/api/v1/deals/:id', auth: true, role: 'admin | manager', description: 'Delete a deal.',
+        params: [{ name: 'id', desc: 'Deal ID' }], query: [], body: null,
+        responses: [{ status: 204, desc: 'Deleted', example: null }] },
+      { method: 'PATCH', path: '/api/v1/deals/:id/stage', auth: true,
+        description: 'Move a deal to a new pipeline stage. Writes an audit log entry.',
+        params: [{ name: 'id', desc: 'Deal ID' }], query: [],
+        body: { stage: { type: 'enum', required: true, desc: 'New | Qualified | Proposal | Negotiation | Won | Lost' } },
+        bodyExample: { stage: 'Proposal' },
+        responses: [{ status: 200, desc: 'Deal with new stage', example: { id: 'did1', stage: 'Proposal', updatedAt: '...' } }] },
+      { method: 'GET', path: '/api/v1/deals/:id/activities', auth: true, description: 'Activities linked to this deal.',
+        params: [{ name: 'id', desc: 'Deal ID' }], query: [], body: null,
+        responses: [{ status: 200, desc: 'Activity list', example: { data: [] } }] },
+    ],
+  },
+  {
+    name: 'Activities', prefix: '/api/v1/activities',
+    endpoints: [
+      { method: 'GET', path: '/api/v1/activities', auth: true,
+        description: 'Paginated activity log. Filter by type, relatedTo, relatedType, owner, completion.',
+        params: [],
+        query: [{ name: 'type', desc: 'call | email | meeting | note | task' }, { name: 'relatedTo', desc: 'Linked entity ID' }, { name: 'relatedType', desc: 'customer | lead | deal' }, { name: 'owner', desc: 'Owner UID' }, { name: 'completed', desc: 'true | false' }],
+        body: null,
+        responses: [{ status: 200, desc: 'Activity list', example: { data: [{ id: 'aid1', type: 'call', title: 'Discovery call', completed: true }], total: 15 } }] },
+      { method: 'POST', path: '/api/v1/activities', auth: true,
+        description: 'Log a new activity.',
+        params: [], query: [],
+        body: { type: { type: 'enum', required: true, desc: 'call | email | meeting | note | task' }, title: { type: 'string', required: true, desc: 'Title' }, description: { type: 'string', required: false, desc: 'Details' }, owner: { type: 'string', required: true, desc: 'Owner UID' }, completed: { type: 'boolean', required: false, desc: 'Default false' }, dueDate: { type: 'datetime', required: false, desc: 'ISO 8601 with offset' }, priority: { type: 'enum', required: false, desc: 'low | medium | high' }, relatedTo: { type: 'string', required: true, desc: 'Linked entity ID' }, relatedType: { type: 'enum', required: true, desc: 'customer | lead | deal' }, relatedName: { type: 'string', required: true, desc: 'Entity display name (denormalized)' } },
+        bodyExample: { type: 'call', title: 'Follow-up call', owner: 'OWNER_UID', completed: false, priority: 'high', dueDate: '2026-09-28T10:00:00+00:00', relatedTo: 'ENTITY_ID', relatedType: 'customer', relatedName: 'James Wilson' },
+        responses: [{ status: 201, desc: 'Activity created', example: { id: 'aid1', type: 'call', title: 'Follow-up call', completed: false } }] },
+      { method: 'GET', path: '/api/v1/activities/:id', auth: true, description: 'Get a single activity.',
+        params: [{ name: 'id', desc: 'Activity ID' }], query: [], body: null,
+        responses: [{ status: 200, desc: 'Activity doc', example: { id: 'aid1', type: 'call', completed: false } }] },
+      { method: 'PATCH', path: '/api/v1/activities/:id', auth: true, description: 'Update activity — commonly used to mark completed.',
+        params: [{ name: 'id', desc: 'Activity ID' }], query: [],
+        body: { completed: { type: 'boolean', required: false, desc: 'Mark done' }, title: { type: 'string', required: false, desc: 'Updated title' } },
+        bodyExample: { completed: true },
+        responses: [{ status: 200, desc: 'Updated activity', example: { id: 'aid1', completed: true } }] },
+      { method: 'DELETE', path: '/api/v1/activities/:id', auth: true, description: 'Delete an activity.',
+        params: [{ name: 'id', desc: 'Activity ID' }], query: [], body: null,
+        responses: [{ status: 204, desc: 'Deleted', example: null }] },
+    ],
+  },
+  {
+    name: 'Tickets', prefix: '/api/v1/tickets',
+    endpoints: [
+      { method: 'GET', path: '/api/v1/tickets', auth: true,
+        description: 'Paginated support ticket list.',
+        params: [],
+        query: [{ name: 'status', desc: 'Open | In_Progress | Resolved | Closed' }, { name: 'priority', desc: 'Low | Medium | High | Critical' }, { name: 'channel', desc: 'email | phone | chat | web' }, { name: 'assigneeId', desc: 'Filter by assignee' }, { name: 'customerId', desc: 'Filter by customer' }],
+        body: null,
+        responses: [{ status: 200, desc: 'Ticket list', example: { data: [{ id: 'tid1', subject: 'Cannot export CSV', status: 'Open', priority: 'High' }], total: 5 } }] },
+      { method: 'POST', path: '/api/v1/tickets', auth: true,
+        description: 'Open a new support ticket.',
+        params: [], query: [],
+        body: { subject: { type: 'string', required: true, desc: 'Ticket subject' }, customerId: { type: 'string', required: false, desc: 'Linked customer' }, customerName: { type: 'string', required: false, desc: 'Customer name (denormalized)' }, status: { type: 'enum', required: false, desc: 'Open | In_Progress | Resolved | Closed (default Open)' }, priority: { type: 'enum', required: false, desc: 'Low | Medium | High | Critical (default Medium)' }, assigneeId: { type: 'string', required: false, desc: 'Assignee UID' }, assigneeName: { type: 'string', required: false, desc: 'Assignee name' }, channel: { type: 'enum', required: false, desc: 'email | phone | chat | web' }, tags: { type: 'string[]', required: false, desc: 'Tag labels' } },
+        bodyExample: { subject: 'API rate limit too low', status: 'Open', priority: 'Critical', channel: 'email', assigneeId: 'AGENT_UID', assigneeName: 'Lily Support' },
+        responses: [{ status: 201, desc: 'Ticket created', example: { id: 'tid1', subject: 'API rate limit too low', status: 'Open', priority: 'Critical' } }] },
+      { method: 'GET', path: '/api/v1/tickets/:id', auth: true,
+        description: 'Get ticket with all comments embedded.',
+        params: [{ name: 'id', desc: 'Ticket ID' }], query: [], body: null,
+        responses: [{ status: 200, desc: 'Ticket + comments', example: { id: 'tid1', subject: 'Cannot export CSV', status: 'Open', comments: [{ id: 'cid1', author: 'James Wilson', body: 'Confirmed bug', isInternal: false }] } }] },
+      { method: 'PATCH', path: '/api/v1/tickets/:id', auth: true, description: 'Update ticket fields.',
+        params: [{ name: 'id', desc: 'Ticket ID' }], query: [],
+        body: { priority: { type: 'enum', required: false, desc: 'Low | Medium | High | Critical' }, assigneeId: { type: 'string', required: false, desc: 'New assignee UID' } },
+        bodyExample: { priority: 'High', assigneeId: 'NEW_AGENT_UID' },
+        responses: [{ status: 200, desc: 'Updated ticket', example: { id: 'tid1', priority: 'High' } }] },
+      { method: 'PATCH', path: '/api/v1/tickets/:id/status', auth: true,
+        description: 'Change ticket status in one call.',
+        params: [{ name: 'id', desc: 'Ticket ID' }], query: [],
+        body: { status: { type: 'enum', required: true, desc: 'Open | In_Progress | Resolved | Closed' } },
+        bodyExample: { status: 'Resolved' },
+        responses: [{ status: 200, desc: 'Updated ticket', example: { id: 'tid1', status: 'Resolved' } }] },
+      { method: 'POST', path: '/api/v1/tickets/:id/comments', auth: true,
+        description: 'Add a comment. Set isInternal: true for agent-only notes.',
+        params: [{ name: 'id', desc: 'Ticket ID' }], query: [],
+        body: { author: { type: 'string', required: true, desc: 'Author name' }, body: { type: 'string', required: true, desc: 'Comment text' }, isInternal: { type: 'boolean', required: false, desc: 'Internal note? (default false)' } },
+        bodyExample: { author: 'Lily Support', body: 'Fix deployed — please verify.', isInternal: false },
+        responses: [{ status: 201, desc: 'Comment created', example: { id: 'cid2', author: 'Lily Support', body: 'Fix deployed...', isInternal: false } }] },
+      { method: 'GET', path: '/api/v1/tickets/:id/comments', auth: true,
+        description: 'List all comments on a ticket, oldest first.',
+        params: [{ name: 'id', desc: 'Ticket ID' }], query: [], body: null,
+        responses: [{ status: 200, desc: 'Comments', example: { data: [{ id: 'cid1', author: 'James Wilson', body: 'Issue confirmed', isInternal: false }] } }] },
+      { method: 'DELETE', path: '/api/v1/tickets/:id', auth: true, description: 'Delete a ticket.',
+        params: [{ name: 'id', desc: 'Ticket ID' }], query: [], body: null,
+        responses: [{ status: 204, desc: 'Deleted', example: null }] },
+    ],
+  },
+  {
+    name: 'Quotes', prefix: '/api/v1/quotes',
+    endpoints: [
+      { method: 'GET', path: '/api/v1/quotes', auth: true,
+        description: 'Paginated quote list.',
+        params: [],
+        query: [{ name: 'status', desc: 'Draft | Sent | Accepted | Rejected | Expired' }, { name: 'dealId', desc: 'Filter by deal' }, { name: 'customerId', desc: 'Filter by customer' }],
+        body: null,
+        responses: [{ status: 200, desc: 'Quote list', example: { data: [{ id: 'qid1', total: 120000, status: 'Sent' }], total: 5 } }] },
+      { method: 'POST', path: '/api/v1/quotes', auth: true,
+        description: 'Create a quote with line items.',
+        params: [], query: [],
+        body: { dealId: { type: 'string', required: false, desc: 'Linked deal ID' }, dealTitle: { type: 'string', required: false, desc: 'Deal title (denormalized)' }, customerId: { type: 'string', required: false, desc: 'Linked customer' }, customerName: { type: 'string', required: false, desc: 'Customer name (denormalized)' }, status: { type: 'enum', required: false, desc: 'Draft | Sent | Accepted | Rejected | Expired (default Draft)' }, validUntil: { type: 'datetime', required: false, desc: 'Expiry ISO 8601' }, notes: { type: 'string', required: false, desc: 'Quote notes' }, subtotal: { type: 'number', required: true, desc: 'Pre-tax subtotal' }, tax: { type: 'number', required: false, desc: 'Tax amount (default 0)' }, total: { type: 'number', required: true, desc: 'Final total' }, lineItems: { type: 'array', required: true, desc: 'Min 1 item — {description, quantity, unitPrice, total}' } },
+        bodyExample: { dealTitle: 'Enterprise License — Acme', customerName: 'James Wilson', status: 'Draft', subtotal: 110000, tax: 10000, total: 120000, validUntil: '2026-10-31T00:00:00+00:00', lineItems: [{ description: 'Enterprise License (annual)', quantity: 1, unitPrice: 100000, total: 100000 }, { description: 'Implementation', quantity: 1, unitPrice: 10000, total: 10000 }] },
+        responses: [{ status: 201, desc: 'Quote created', example: { id: 'qid1', status: 'Draft', total: 120000 } }] },
+      { method: 'GET', path: '/api/v1/quotes/:id', auth: true, description: 'Get a single quote.',
+        params: [{ name: 'id', desc: 'Quote ID' }], query: [], body: null,
+        responses: [{ status: 200, desc: 'Quote doc', example: { id: 'qid1', total: 120000, status: 'Draft' } }] },
+      { method: 'PATCH', path: '/api/v1/quotes/:id', auth: true, description: 'Update quote fields.',
+        params: [{ name: 'id', desc: 'Quote ID' }], query: [],
+        body: { total: { type: 'number', required: false, desc: 'Updated total' }, notes: { type: 'string', required: false, desc: 'Notes' } },
+        bodyExample: { total: 115000, notes: '5% discount applied' },
+        responses: [{ status: 200, desc: 'Updated quote', example: { id: 'qid1', total: 115000 } }] },
+      { method: 'POST', path: '/api/v1/quotes/:id/send', auth: true, description: 'Mark quote as Sent.',
+        params: [{ name: 'id', desc: 'Quote ID' }], query: [], body: null,
+        responses: [{ status: 200, desc: 'status=Sent', example: { id: 'qid1', status: 'Sent' } }] },
+      { method: 'POST', path: '/api/v1/quotes/:id/accept', auth: true, description: 'Mark quote as Accepted.',
+        params: [{ name: 'id', desc: 'Quote ID' }], query: [], body: null,
+        responses: [{ status: 200, desc: 'status=Accepted', example: { id: 'qid1', status: 'Accepted' } }] },
+      { method: 'POST', path: '/api/v1/quotes/:id/reject', auth: true, description: 'Mark quote as Rejected.',
+        params: [{ name: 'id', desc: 'Quote ID' }], query: [], body: null,
+        responses: [{ status: 200, desc: 'status=Rejected', example: { id: 'qid1', status: 'Rejected' } }] },
+      { method: 'DELETE', path: '/api/v1/quotes/:id', auth: true, description: 'Delete a quote.',
+        params: [{ name: 'id', desc: 'Quote ID' }], query: [], body: null,
+        responses: [{ status: 204, desc: 'Deleted', example: null }] },
+    ],
+  },
+  {
+    name: 'Tags', prefix: '/api/v1/tags',
+    endpoints: [
+      { method: 'GET', path: '/api/v1/tags', auth: true, description: 'List all tags.',
+        params: [], query: [], body: null,
+        responses: [{ status: 200, desc: 'Tag list', example: { data: [{ id: 'tagid1', name: 'VIP', color: '#ef4444' }] } }] },
+      { method: 'POST', path: '/api/v1/tags', auth: true, description: 'Create a tag.',
+        params: [], query: [],
+        body: { name: { type: 'string', required: true, desc: 'Tag label' }, color: { type: 'string', required: true, desc: 'Hex color e.g. #ef4444' } },
+        bodyExample: { name: 'Hot Prospect', color: '#ef4444' },
+        responses: [{ status: 201, desc: 'Tag created', example: { id: 'tagid1', name: 'Hot Prospect', color: '#ef4444' } }] },
+      { method: 'GET', path: '/api/v1/tags/:id', auth: true, description: 'Get a single tag.',
+        params: [{ name: 'id', desc: 'Tag ID' }], query: [], body: null,
+        responses: [{ status: 200, desc: 'Tag doc', example: { id: 'tagid1', name: 'VIP', color: '#ef4444' } }] },
+      { method: 'PATCH', path: '/api/v1/tags/:id', auth: true, description: 'Update a tag.',
+        params: [{ name: 'id', desc: 'Tag ID' }], query: [],
+        body: { name: { type: 'string', required: false, desc: 'New label' }, color: { type: 'string', required: false, desc: 'New hex color' } },
+        bodyExample: { name: 'Enterprise', color: '#8b5cf6' },
+        responses: [{ status: 200, desc: 'Updated tag', example: { id: 'tagid1', name: 'Enterprise', color: '#8b5cf6' } }] },
+      { method: 'DELETE', path: '/api/v1/tags/:id', auth: true, description: 'Delete a tag.',
+        params: [{ name: 'id', desc: 'Tag ID' }], query: [], body: null,
+        responses: [{ status: 204, desc: 'Deleted', example: null }] },
+    ],
+  },
+  {
+    name: 'Notifications', prefix: '/api/v1/notifications',
+    endpoints: [
+      { method: 'GET', path: '/api/v1/notifications', auth: true,
+        description: "Returns the signed-in user's notification items.",
+        params: [], query: [], body: null,
+        responses: [{ status: 200, desc: 'Notification list', example: { data: [{ id: 'nid1', type: 'deal_updated', title: 'Deal moved to Negotiation', read: false }] } }] },
+      { method: 'PATCH', path: '/api/v1/notifications/read-all', auth: true,
+        description: 'Mark all notifications read for the current user.',
+        params: [], query: [], body: null,
+        responses: [{ status: 200, desc: 'All marked read', example: { message: 'All notifications marked as read' } }] },
+    ],
+  },
+  {
+    name: 'Analytics', prefix: '/api/v1/analytics',
+    endpoints: [
+      { method: 'GET', path: '/api/v1/analytics/overview', auth: true,
+        description: 'High-level KPIs: total customers, leads, open deals, pipeline value, open tickets.',
+        params: [], query: [], body: null,
+        responses: [{ status: 200, desc: 'Overview stats', example: { customers: 10, leads: 8, openDeals: 7, totalPipelineValue: 741600, openTickets: 4 } }] },
+      { method: 'GET', path: '/api/v1/analytics/pipeline', auth: true,
+        description: 'Deal counts and total value grouped by pipeline stage.',
+        params: [], query: [], body: null,
+        responses: [{ status: 200, desc: 'Pipeline breakdown', example: { stages: [{ stage: 'New', count: 2, total: 25600 }, { stage: 'Qualified', count: 2, total: 308000 }, { stage: 'Proposal', count: 2, total: 248000 }, { stage: 'Negotiation', count: 1, total: 85000 }] } }] },
+    ],
+  },
+  {
+    name: 'Custom Fields', prefix: '/api/v1/custom-fields',
+    endpoints: [
+      { method: 'GET', path: '/api/v1/custom-fields', auth: true, description: 'List custom field definitions.',
+        params: [], query: [{ name: 'entity', desc: 'customer | lead | deal' }], body: null,
+        responses: [{ status: 200, desc: 'Field list', example: { data: [{ id: 'cfid1', entity: 'customer', name: 'LinkedIn URL', type: 'url' }] } }] },
+      { method: 'POST', path: '/api/v1/custom-fields', auth: true, description: 'Define a new custom field on a CRM entity.',
+        params: [], query: [],
+        body: { entity: { type: 'enum', required: true, desc: 'customer | lead | deal' }, name: { type: 'string', required: true, desc: 'Field label' }, type: { type: 'enum', required: true, desc: 'text | number | date | boolean | url' }, required: { type: 'boolean', required: false, desc: 'Default false' } },
+        bodyExample: { entity: 'deal', name: 'Competitor', type: 'text', required: false },
+        responses: [{ status: 201, desc: 'Field created', example: { id: 'cfid1', entity: 'deal', name: 'Competitor', type: 'text' } }] },
+      { method: 'PATCH', path: '/api/v1/custom-fields/:id', auth: true, description: 'Update a custom field definition.',
+        params: [{ name: 'id', desc: 'Field ID' }], query: [],
+        body: { name: { type: 'string', required: false, desc: 'New label' }, required: { type: 'boolean', required: false, desc: 'Toggle required' } },
+        bodyExample: { name: 'Main Competitor', required: true },
+        responses: [{ status: 200, desc: 'Updated field', example: { id: 'cfid1', name: 'Main Competitor', required: true } }] },
+      { method: 'DELETE', path: '/api/v1/custom-fields/:id', auth: true, description: 'Remove a custom field definition.',
+        params: [{ name: 'id', desc: 'Field ID' }], query: [], body: null,
+        responses: [{ status: 204, desc: 'Deleted', example: null }] },
+    ],
+  },
+  {
+    name: 'Segments', prefix: '/api/v1/segments',
+    endpoints: [
+      { method: 'GET', path: '/api/v1/segments', auth: true, description: 'List saved audience segments.',
+        params: [], query: [], body: null,
+        responses: [{ status: 200, desc: 'Segment list', example: { data: [{ id: 'sid1', name: 'High-Value Customers', entity: 'customer' }] } }] },
+      { method: 'POST', path: '/api/v1/segments', auth: true, description: 'Create a named segment with filter conditions.',
+        params: [], query: [],
+        body: { name: { type: 'string', required: true, desc: 'Segment name' }, entity: { type: 'enum', required: true, desc: 'customer | lead | deal' }, filters: { type: 'array', required: true, desc: '[{field, op, value}] conditions' } },
+        bodyExample: { name: 'Active Enterprise Accounts', entity: 'customer', filters: [{ field: 'status', op: '==', value: 'Active' }] },
+        responses: [{ status: 201, desc: 'Segment created', example: { id: 'sid1', name: 'Active Enterprise Accounts' } }] },
+      { method: 'GET', path: '/api/v1/segments/:id', auth: true, description: 'Get a single segment.',
+        params: [{ name: 'id', desc: 'Segment ID' }], query: [], body: null,
+        responses: [{ status: 200, desc: 'Segment doc', example: { id: 'sid1', name: 'Active Enterprise Accounts' } }] },
+      { method: 'DELETE', path: '/api/v1/segments/:id', auth: true, description: 'Delete a segment.',
+        params: [{ name: 'id', desc: 'Segment ID' }], query: [], body: null,
+        responses: [{ status: 204, desc: 'Deleted', example: null }] },
+    ],
+  },
+  {
+    name: 'Webhooks', prefix: '/api/v1/webhooks',
+    endpoints: [
+      { method: 'GET', path: '/api/v1/webhooks', auth: true, description: 'List registered webhook endpoints.',
+        params: [], query: [], body: null,
+        responses: [{ status: 200, desc: 'Webhook list', example: { data: [{ id: 'wid1', url: 'https://example.com/hook', events: ['deal.created'], active: true }] } }] },
+      { method: 'POST', path: '/api/v1/webhooks', auth: true, description: 'Register a webhook that receives a JSON POST when listed events fire.',
+        params: [], query: [],
+        body: { url: { type: 'string', required: true, desc: 'Destination URL' }, events: { type: 'string[]', required: true, desc: 'Events to subscribe (e.g. deal.created)' }, secret: { type: 'string', required: false, desc: 'HMAC signing secret' } },
+        bodyExample: { url: 'https://n8n.mycompany.com/webhook/crm', events: ['deal.created', 'deal.updated', 'customer.created'], secret: 'my-secret-key' },
+        responses: [{ status: 201, desc: 'Webhook registered', example: { id: 'wid1', url: 'https://n8n.mycompany.com/webhook/crm', active: true } }] },
+      { method: 'DELETE', path: '/api/v1/webhooks/:id', auth: true, description: 'Remove a webhook registration.',
+        params: [{ name: 'id', desc: 'Webhook ID' }], query: [], body: null,
+        responses: [{ status: 204, desc: 'Deleted', example: null }] },
+    ],
+  },
+  {
+    name: 'Audit Log', prefix: '/api/v1/audit-log',
+    endpoints: [
+      { method: 'GET', path: '/api/v1/audit-log', auth: true,
+        description: 'Read-only trail. Every create/update/delete on customers, leads, deals, and quotes is logged automatically via writeAudit().',
+        params: [],
+        query: [{ name: 'entityType', desc: 'customer | lead | deal | quote' }, { name: 'entityId', desc: 'Specific entity ID' }, { name: 'actorId', desc: 'User UID' }, { name: 'page', desc: 'Page number' }, { name: 'pageSize', desc: 'Items per page' }],
+        body: null,
+        responses: [{ status: 200, desc: 'Audit entries', example: { data: [{ id: 'alid1', entityType: 'deal', entityId: 'did1', action: 'updated', actorId: 'uid1', before: { stage: 'Qualified' }, after: { stage: 'Proposal' }, createdAt: '...' }], total: 42 } }] },
+    ],
+  },
+];
+
+// ── State ─────────────────────────────────────────────────────────────────────
+let token = '';
+let activeIndex = null;
+
+const navTree  = document.getElementById('nav-tree');
+const mainEl   = document.getElementById('main');
+const detailEl = document.getElementById('detail');
+const welcomeEl = document.getElementById('welcome');
+const searchEl  = document.getElementById('search');
+
+// ── Sidebar builder ───────────────────────────────────────────────────────────
+function buildNav(filter = '') {
+  navTree.innerHTML = '';
+  const fl = filter.toLowerCase();
+  resources.forEach((res, ri) => {
+    const eps = res.endpoints.filter(ep =>
+      !fl || ep.method.toLowerCase().includes(fl) || ep.path.toLowerCase().includes(fl) || ep.description.toLowerCase().includes(fl)
+    );
+    if (!eps.length) return;
+    const group = document.createElement('div');
+    group.className = 'resource-group open';
+    const header = document.createElement('div');
+    header.className = 'resource-header';
+    header.innerHTML = `<span class="resource-name">${res.name}</span><span class="resource-toggle">▶</span>`;
+    header.onclick = () => group.classList.toggle('open');
+    const list = document.createElement('div');
+    list.className = 'endpoint-list';
+    eps.forEach(ep => {
+      const globalIdx = resources.slice(0, ri).reduce((s, r) => s + r.endpoints.length, 0) + res.endpoints.indexOf(ep);
+      const item = document.createElement('div');
+      item.className = 'endpoint-item' + (activeIndex === globalIdx ? ' active' : '');
+      item.dataset.idx = globalIdx;
+      const shortPath = ep.path.replace('/api/v1', '');
+      item.innerHTML = `<span class="method-badge method-${ep.method}">${ep.method}</span><span class="ep-path">${shortPath}</span>`;
+      item.onclick = () => selectEndpoint(globalIdx);
+      list.appendChild(item);
+    });
+    group.appendChild(header);
+    group.appendChild(list);
+    navTree.appendChild(group);
+  });
+}
+
+// ── JSON syntax highlight ─────────────────────────────────────────────────────
+function highlight(json) {
+  if (json === null) return '<span class="json-null">null</span>';
+  return JSON.stringify(json, null, 2)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g, m => {
+      if (/^"/.test(m)) return /:$/.test(m) ? `<span class="json-key">${m}</span>` : `<span class="json-str">${m}</span>`;
+      if (/true|false/.test(m)) return `<span class="json-bool">${m}</span>`;
+      if (/null/.test(m)) return `<span class="json-null">${m}</span>`;
+      return `<span class="json-num">${m}</span>`;
+    });
+}
+
+function getEndpoint(idx) {
+  let count = 0;
+  for (const res of resources) { for (const ep of res.endpoints) { if (count === idx) return ep; count++; } }
+  return null;
+}
+
+// ── Render endpoint ───────────────────────────────────────────────────────────
+function selectEndpoint(idx) {
+  activeIndex = idx;
+  const ep = getEndpoint(idx);
+  if (!ep) return;
+  welcomeEl.style.display = 'none';
+  detailEl.style.display = 'block';
+  buildNav(searchEl.value);
+
+  const mc = { GET: 'var(--get)', POST: 'var(--post)', PATCH: 'var(--patch)', DELETE: 'var(--delete)' };
+  const mb = { GET: 'var(--get-bg)', POST: 'var(--post-bg)', PATCH: 'var(--patch-bg)', DELETE: 'var(--delete-bg)' };
+  const methodColor = mc[ep.method] || 'var(--accent)';
+  const methodBg    = mb[ep.method] || 'var(--accent-dim)';
+
+  const pathParamInputs = (ep.params || []).map(p =>
+    `<div class="tryit-field"><label class="tryit-label">:${p.name}</label><input class="tryit-input" data-param="${p.name}" placeholder="${p.desc}"></div>`
+  ).join('');
+  const queryInputs = (ep.query || []).map(q =>
+    `<div class="tryit-field"><label class="tryit-label">?${q.name}</label><input class="tryit-input" data-query="${q.name}" placeholder="${q.desc}"></div>`
+  ).join('');
+  const bodyArea = ep.body
+    ? `<div><div class="section-title">Request Body</div><textarea class="tryit-body-area" id="ti-body">${ep.bodyExample ? JSON.stringify(ep.bodyExample, null, 2) : ''}</textarea></div>`
+    : '';
+  const schemaRows = ep.body ? Object.entries(ep.body).map(([k, v]) =>
+    `<tr><td>${k}${v.required ? '<span class="required-dot">*</span>' : ''}</td><td>${v.type}</td><td>${v.desc}</td></tr>`
+  ).join('') : '';
+  const responseHtml = ep.responses.map(r => {
+    const cls = r.status < 300 ? 's2xx' : r.status < 500 ? 's4xx' : 's5xx';
+    return `<div class="response-example"><div class="response-status-row"><span class="status-badge ${cls}">${r.status}</span><span class="status-desc">${r.desc}</span></div>${r.example !== null ? `<div class="code-block">${highlight(r.example)}</div>` : '<div class="code-block" style="color:var(--text-3)">No body</div>'}</div>`;
+  }).join('');
+  const authBadge = ep.auth
+    ? `<span class="ep-auth-badge required">🔒 Bearer token</span>${ep.role ? `<span class="ep-auth-badge required">${ep.role}</span>` : ''}`
+    : `<span class="ep-auth-badge">public</span>`;
+  const hasParams = (ep.params && ep.params.length) || (ep.query && ep.query.length);
+
+  detailEl.innerHTML = `
+    <div class="ep-header">
+      <div class="ep-title-row">
+        <span class="method-badge-lg method-${ep.method}" style="background:${methodBg};color:${methodColor}">${ep.method}</span>
+        <span class="ep-path-lg">${ep.path}</span>
+        ${authBadge}
+      </div>
+      <p class="ep-description">${ep.description}</p>
+    </div>
+    ${ep.query && ep.query.length ? `<div class="section"><div class="section-title">Query Parameters</div><table class="param-table"><thead><tr><th>Name</th><th>Type</th><th>Description</th></tr></thead><tbody>${ep.query.map(q=>`<tr><td>${q.name}</td><td>string</td><td>${q.desc}</td></tr>`).join('')}</tbody></table></div>` : ''}
+    ${ep.body ? `<div class="section"><div class="section-title">Request Body Schema</div><table class="param-table"><thead><tr><th>Field</th><th>Type</th><th>Description</th></tr></thead><tbody>${schemaRows}</tbody></table></div>` : ''}
+    <div class="section"><div class="section-title">Responses</div><div class="response-examples">${responseHtml}</div></div>
+    <div class="tryit-section">
+      <div class="tryit-header"><h3>TRY IT LIVE</h3><span style="color:var(--text-3);font-size:11px;font-family:'JetBrains Mono',monospace">hits this server</span></div>
+      <div class="tryit-body">
+        <div class="tryit-url-row">
+          <span class="tryit-url-method" style="color:${methodColor}">${ep.method}</span>
+          <span class="tryit-url-text" id="ti-url-display">${ep.path}</span>
+        </div>
+        ${hasParams ? `<div class="tryit-param-grid">${pathParamInputs}${queryInputs}</div>` : ''}
+        ${bodyArea}
+        <div class="tryit-actions">
+          <button class="btn-send" id="ti-send">Send Request</button>
+          <span class="tryit-timing" id="ti-timing"></span>
+          ${ep.auth && !token ? '<span style="color:var(--patch);font-size:11px;font-family:JetBrains Mono,monospace">⚠ Sign in first</span>' : ''}
+        </div>
+        <div id="ti-response"></div>
+      </div>
+    </div>`;
+
+  function updateUrl() {
+    const base = document.getElementById('cfg-base').value.replace(/\/$/, '');
+    let path = ep.path;
+    detailEl.querySelectorAll('[data-param]').forEach(inp => {
+      if (inp.value.trim()) path = path.replace(':' + inp.dataset.param, inp.value.trim());
+    });
+    const qps = [];
+    detailEl.querySelectorAll('[data-query]').forEach(inp => {
+      if (inp.value.trim()) qps.push(`${inp.dataset.query}=${encodeURIComponent(inp.value.trim())}`);
+    });
+    document.getElementById('ti-url-display').textContent = base + path + (qps.length ? '?' + qps.join('&') : '');
+  }
+  detailEl.querySelectorAll('[data-param],[data-query]').forEach(inp => inp.addEventListener('input', updateUrl));
+  updateUrl();
+
+  document.getElementById('ti-send').onclick = async () => {
+    const btn = document.getElementById('ti-send');
+    btn.disabled = true; btn.textContent = 'Sending…';
+    document.getElementById('ti-timing').textContent = '';
+    document.getElementById('ti-response').innerHTML = '';
+
+    const base = document.getElementById('cfg-base').value.replace(/\/$/, '');
+    let path = ep.path;
+    detailEl.querySelectorAll('[data-param]').forEach(inp => {
+      path = path.replace(':' + inp.dataset.param, inp.value.trim() || ':' + inp.dataset.param);
+    });
+    const qps = [];
+    detailEl.querySelectorAll('[data-query]').forEach(inp => {
+      if (inp.value.trim()) qps.push(`${inp.dataset.query}=${encodeURIComponent(inp.value.trim())}`);
+    });
+    const url = base + path + (qps.length ? '?' + qps.join('&') : '');
+    const headers = { 'Content-Type': 'application/json' };
+    if (ep.auth && token) headers['Authorization'] = 'Bearer ' + token;
+    const bodyEl = document.getElementById('ti-body');
+    const t0 = performance.now();
+    try {
+      const res = await fetch(url, { method: ep.method, headers, body: (ep.body && bodyEl) ? bodyEl.value.trim() || undefined : undefined });
+      const elapsed = Math.round(performance.now() - t0);
+      document.getElementById('ti-timing').textContent = `${elapsed}ms`;
+      const text = await res.text();
+      let parsed; try { parsed = JSON.parse(text); } catch { parsed = text; }
+      const cls = res.status < 300 ? 's2xx' : res.status < 500 ? 's4xx' : 's5xx';
+      document.getElementById('ti-response').innerHTML = `<div class="response-panel"><div class="response-bar"><span class="response-code ${cls}">${res.status} ${res.statusText}</span><span class="response-time">${elapsed}ms</span></div><div class="response-body">${typeof parsed === 'string' ? parsed : highlight(parsed)}</div></div>`;
+    } catch (err) {
+      document.getElementById('ti-response').innerHTML = `<div class="response-panel"><div class="response-body" style="color:var(--delete)">${err.message}</div></div>`;
+    }
+    btn.disabled = false; btn.textContent = 'Send Request';
+  };
+  mainEl.scrollTo(0, 0);
+}
+
+// ── Sign in ───────────────────────────────────────────────────────────────────
+document.getElementById('btn-signin').onclick = async () => {
+  const base  = document.getElementById('cfg-base').value.replace(/\/$/, '');
+  const email = document.getElementById('cfg-email').value.trim();
+  const pass  = document.getElementById('cfg-pass').value;
+  const status = document.getElementById('auth-status');
+  let authBase = 'http://localhost:9099';
+  try { const u = new URL(base); authBase = `${u.protocol}//${u.hostname}:9099`; } catch {}
+  status.textContent = 'Signing in…'; status.className = 'auth-status';
+  try {
+    const res = await fetch(`${authBase}/identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=fake-key`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password: pass, returnSecureToken: true }),
+    });
+    const data = await res.json();
+    if (!data.idToken) throw new Error(data.error?.message || 'Sign-in failed');
+    token = data.idToken;
+    status.textContent = `✓ ${email}`; status.className = 'auth-status';
+    document.getElementById('btn-signin').textContent = 'Refresh';
+    if (activeIndex !== null) selectEndpoint(activeIndex);
+  } catch (err) {
+    status.textContent = `✗ ${err.message}`; status.className = 'auth-status error';
+  }
+};
+
+searchEl.addEventListener('input', () => buildNav(searchEl.value));
+document.getElementById('btn-theme').onclick = () => {
+  document.documentElement.dataset.theme = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
+};
+
+// ── Init — default base URL to this server's origin ───────────────────────────
+document.getElementById('cfg-base').value = window.location.origin;
+buildNav();
+</script>
+</body>
+</html>
