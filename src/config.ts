@@ -13,7 +13,7 @@ const isEmulator = process.env.FIREBASE_EMULATOR === 'true'
 export const config = {
   nodeEnv:    optional('NODE_ENV', 'development'),
   port:       parseInt(optional('PORT', '3001'), 10),
-  corsOrigin: optional('CORS_ORIGIN', 'http://localhost:5173'),
+  corsOrigin: optional('CORS_ORIGIN', ''),   // empty = handled dynamically below
 
   isEmulator,
 
