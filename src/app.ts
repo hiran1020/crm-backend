@@ -1,7 +1,5 @@
 import Fastify from 'fastify'
-import cookie from '@fastify/cookie'
 import { config } from './config.js'
-import jwtPlugin from './plugins/jwt.js'
 import corsPlugin from './plugins/cors.js'
 import { authRoutes } from './routes/auth.js'
 import { usersRoutes } from './routes/users.js'
@@ -32,9 +30,7 @@ export async function buildApp() {
   })
 
   // Core plugins
-  await app.register(cookie)
   await app.register(corsPlugin)
-  await app.register(jwtPlugin)
 
   // Health check (unauthenticated)
   app.get('/health', async () => ({ status: 'ok', timestamp: new Date().toISOString() }))

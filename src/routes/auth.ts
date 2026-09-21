@@ -1,89 +1,42 @@
 import type { FastifyInstance } from 'fastify'
-import { z } from 'zod'
-import { prisma } from '../lib/prisma.js'
-import { verifyPassword } from '../lib/password.js'
+import { auth, db, toDoc, now } from '../lib/firebase.js'
 import { authenticate } from '../middleware/authenticate.js'
 
-const loginBody = z.object({
-  email: z.string().email(),
-  password: z.string().min(1),
-})
-
 export async function authRoutes(app: FastifyInstance) {
-  // POST /api/v1/auth/login
-  app.post('/login', async (request, reply) => {
-    const result = loginBody.safeParse(request.body)
-    if (!result.success) {
-      return reply.status(400).send({ error: 'Invalid request body', issues: result.error.issues })
-    }
-    const { email, password } = result.data
-
-    const user = await prisma.user.findUnique({ where: { email } })
-    if (!user || user.status === 'inactive') {
-      return reply.status(401).send({ error: 'Invalid credentials' })
-    }
-
-    const valid = await verifyPassword(password, user.passwordHash)
-    if (!valid) {
-      return reply.status(401).send({ error: 'Invalid credentials' })
-    }
-
-    await prisma.user.update({
-      where: { id: user.id },
-      data: { lastLoginAt: new Date() },
-    })
-
-    const payload = { id: user.id, email: user.email, name: user.name, role: user.role }
-
-    const accessToken = await reply.accessSign(payload)
-    const refreshToken = await reply.refreshSign(payload)
-
-    return reply
-      .setCookie('refreshToken', refreshToken, {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
-        sameSite: 'strict',
-        path: '/api/v1/auth/refresh',
-        maxAge: 60 * 60 * 24 * 7,
+  // GET /api/v1/auth/me — return the current user's profile from Firestore
+  app.get('/me', { preHandler: authenticate }, async (request, reply) => {
+    const snap = await db.collection('users').doc(request.user.id).get()
+    const profile = toDoc(snap)
+    if (!profile) {
+      // First login — build a minimal profile from the token
+      return reply.send({
+        id: request.user.id,
+        email: request.user.email,
+        name: request.user.name,
+        role: request.user.role,
       })
-      .send({
-        accessToken,
-        user: {
-          id: user.id,
-          name: user.name,
-          email: user.email,
-          role: user.role,
-          status: user.status,
-          avatarInitials: user.avatarInitials,
-          phone: user.phone,
-          jobTitle: user.jobTitle,
-          department: user.department,
-        },
-      })
+    }
+    return reply.send(profile)
   })
 
-  // POST /api/v1/auth/refresh
-  app.post('/refresh', async (request, reply) => {
-    try {
-      await request.refreshVerify({ onlyCookie: true })
-    } catch {
-      return reply.status(401).send({ error: 'Invalid or expired refresh token' })
-    }
-
-    const { id, email, name, role } = request.user
-    const user = await prisma.user.findUnique({ where: { id } })
-    if (!user || user.status === 'inactive') {
-      return reply.status(401).send({ error: 'User not found or inactive' })
-    }
-
-    const accessToken = await reply.accessSign({ id, email, name, role })
-    return reply.send({ accessToken })
+  // POST /api/v1/auth/logout — revoke all refresh tokens for the current user
+  app.post('/logout', { preHandler: authenticate }, async (request, reply) => {
+    await auth.revokeRefreshTokens(request.user.id)
+    return reply.send({ message: 'Logged out' })
   })
 
-  // POST /api/v1/auth/logout
-  app.post('/logout', { preHandler: authenticate }, async (_request, reply) => {
-    return reply
-      .clearCookie('refreshToken', { path: '/api/v1/auth/refresh' })
-      .send({ message: 'Logged out' })
+  // POST /api/v1/auth/set-role — admin sets a role as a custom claim (admin only)
+  app.post('/set-role', { preHandler: authenticate }, async (request, reply) => {
+    if (request.user.role !== 'admin') {
+      return reply.status(403).send({ error: 'Forbidden' })
+    }
+    const { uid, role } = request.body as { uid?: string; role?: string }
+    if (!uid || !role || !['admin', 'manager', 'sales_agent', 'support'].includes(role)) {
+      return reply.status(400).send({ error: 'uid and a valid role are required' })
+    }
+    await auth.setCustomUserClaims(uid, { role })
+    // Sync to Firestore user doc
+    await db.collection('users').doc(uid).set({ role, updatedAt: now() }, { merge: true })
+    return reply.send({ uid, role })
   })
 }

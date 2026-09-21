@@ -1,53 +1,21 @@
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
-import type { EntityType, Prisma } from '@prisma/client'
-import { Prisma as PrismaClient } from '@prisma/client'
-import { prisma } from '../lib/prisma.js'
-import { handlePrismaError } from '../lib/errors.js'
+import { db, toDocs, toDoc, now } from '../lib/firebase.js'
 import { authenticate } from '../middleware/authenticate.js'
 import { requireRole } from '../middleware/requireRole.js'
-import { sendToUser } from '../lib/sse.js'
 
-const triggerSchema = z.object({
-  event: z.enum(['created', 'updated', 'status_changed', 'stage_changed']),
-  entityType: z.enum(['customer', 'lead', 'deal']),
+const actionSchema = z.object({
+  type: z.enum(['send_email', 'create_task', 'update_field', 'create_notification', 'webhook']),
+  config: z.record(z.string(), z.unknown()).default({}),
 })
-
-const conditionSchema = z.object({
-  field: z.string().min(1),
-  op: z.enum(['eq', 'ne', 'contains', 'gt', 'gte', 'lt', 'lte']),
-  value: z.unknown(),
-})
-
-const actionSchema = z.discriminatedUnion('type', [
-  z.object({
-    type: z.literal('notify'),
-    userId: z.string().uuid(),
-    title: z.string(),
-    body: z.string(),
-    link: z.string().optional(),
-  }),
-  z.object({
-    type: z.literal('status_change'),
-    entityType: z.enum(['customer', 'lead', 'deal']),
-    field: z.string(),
-    value: z.string(),
-  }),
-  z.object({
-    type: z.literal('email'),
-    to: z.string().email(),
-    subject: z.string(),
-    body: z.string(),
-  }),
-])
 
 const createBody = z.object({
   name: z.string().trim().min(1),
-  entityType: z.enum(['customer', 'lead', 'deal']),
-  trigger: triggerSchema,
-  conditions: z.array(conditionSchema).optional(),
+  description: z.string().optional(),
+  trigger: z.enum(['deal_stage_change', 'lead_status_change', 'ticket_created', 'ticket_closed', 'quote_accepted', 'manual']),
+  conditions: z.array(z.record(z.string(), z.unknown())).optional().default([]),
   actions: z.array(actionSchema).min(1),
-  enabled: z.boolean().default(true),
+  active: z.boolean().default(true),
 })
 
 const updateBody = createBody.partial()
@@ -56,12 +24,11 @@ export async function workflowsRoutes(app: FastifyInstance) {
   // GET /api/v1/workflows
   app.get('/', { preHandler: authenticate }, async (request, reply) => {
     const q = request.query as Record<string, string>
-    const where: Prisma.WorkflowWhereInput = {}
-    if (q.entityType) where.entityType = q.entityType as EntityType
-    if (q.enabled !== undefined) where.enabled = q.enabled === 'true'
-
-    const workflows = await prisma.workflow.findMany({ where, orderBy: { name: 'asc' } })
-    return reply.send({ data: workflows })
+    let query = db.collection('workflows') as FirebaseFirestore.Query
+    if (q.trigger) query = query.where('trigger', '==', q.trigger)
+    if (q.active !== undefined) query = query.where('active', '==', q.active === 'true')
+    const snap = await query.orderBy('name').get()
+    return reply.send({ data: toDocs(snap) })
   })
 
   // POST /api/v1/workflows
@@ -73,27 +40,18 @@ export async function workflowsRoutes(app: FastifyInstance) {
       if (!result.success) {
         return reply.status(400).send({ error: 'Invalid request body', issues: result.error.issues })
       }
-      try {
-        const { trigger, conditions, actions, ...rest } = result.data
-        const workflow = await prisma.workflow.create({
-          data: {
-            ...rest,
-            trigger: trigger as object,
-            actions: actions as object[],
-            ...(conditions && { conditions: conditions as object[] }),
-          },
-        })
-        return reply.status(201).send(workflow)
-      } catch (err) {
-        return handlePrismaError(err, reply) ?? reply.status(500).send({ error: 'Internal server error' })
-      }
+      const docRef = db.collection('workflows').doc()
+      const workflow = { id: docRef.id, ...result.data, createdAt: now(), updatedAt: now() }
+      await docRef.set(workflow)
+      return reply.status(201).send(workflow)
     },
   )
 
   // GET /api/v1/workflows/:id
   app.get('/:id', { preHandler: authenticate }, async (request, reply) => {
     const { id } = request.params as { id: string }
-    const workflow = await prisma.workflow.findUnique({ where: { id } })
+    const snap = await db.collection('workflows').doc(id).get()
+    const workflow = toDoc(snap)
     if (!workflow) return reply.status(404).send({ error: 'Workflow not found' })
     return reply.send(workflow)
   })
@@ -108,81 +66,64 @@ export async function workflowsRoutes(app: FastifyInstance) {
       if (!result.success) {
         return reply.status(400).send({ error: 'Invalid request body', issues: result.error.issues })
       }
-      try {
-        const { trigger, conditions, actions, ...updateRest } = result.data
-        const workflow = await prisma.workflow.update({
-          where: { id },
-          data: {
-            ...updateRest,
-            ...(trigger && { trigger: trigger as object }),
-            ...(actions && { actions: actions as object[] }),
-            ...(conditions !== undefined && { conditions: conditions ? conditions as object[] : PrismaClient.JsonNull }),
-          },
-        })
-        return reply.send(workflow)
-      } catch (err) {
-        return handlePrismaError(err, reply) ?? reply.status(500).send({ error: 'Internal server error' })
-      }
+      const snap = await db.collection('workflows').doc(id).get()
+      if (!snap.exists) return reply.status(404).send({ error: 'Workflow not found' })
+      await db.collection('workflows').doc(id).update({ ...result.data, updatedAt: now() })
+      return reply.send(toDoc(await db.collection('workflows').doc(id).get()))
     },
   )
 
   // DELETE /api/v1/workflows/:id
   app.delete(
     '/:id',
-    { preHandler: [authenticate, requireRole('admin', 'manager')] },
+    { preHandler: [authenticate, requireRole('admin')] },
     async (request, reply) => {
       const { id } = request.params as { id: string }
-      try {
-        await prisma.workflow.delete({ where: { id } })
-        return reply.status(204).send()
-      } catch (err) {
-        return handlePrismaError(err, reply) ?? reply.status(500).send({ error: 'Internal server error' })
-      }
+      const snap = await db.collection('workflows').doc(id).get()
+      if (!snap.exists) return reply.status(404).send({ error: 'Workflow not found' })
+      await db.collection('workflows').doc(id).delete()
+      return reply.status(204).send()
     },
   )
 
-  // PATCH /api/v1/workflows/:id/toggle  — enable / disable
+  // PATCH /api/v1/workflows/:id/toggle
   app.patch(
     '/:id/toggle',
     { preHandler: [authenticate, requireRole('admin', 'manager')] },
     async (request, reply) => {
       const { id } = request.params as { id: string }
-      const workflow = await prisma.workflow.findUnique({ where: { id } })
-      if (!workflow) return reply.status(404).send({ error: 'Workflow not found' })
-
-      const updated = await prisma.workflow.update({
-        where: { id },
-        data: { enabled: !workflow.enabled },
-      })
-      return reply.send(updated)
+      const snap = await db.collection('workflows').doc(id).get()
+      if (!snap.exists) return reply.status(404).send({ error: 'Workflow not found' })
+      const currentActive = snap.data()?.active ?? false
+      await db.collection('workflows').doc(id).update({ active: !currentActive, updatedAt: now() })
+      return reply.send(toDoc(await db.collection('workflows').doc(id).get()))
     },
   )
 
-  // POST /api/v1/workflows/:id/trigger  — manual trigger; executes notify actions immediately
-  app.post('/:id/trigger', { preHandler: authenticate }, async (request, reply) => {
-    const { id } = request.params as { id: string }
-    const workflow = await prisma.workflow.findUnique({ where: { id } })
-    if (!workflow) return reply.status(404).send({ error: 'Workflow not found' })
-    if (!workflow.enabled) return reply.status(422).send({ error: 'Workflow is disabled' })
+  // POST /api/v1/workflows/:id/trigger — manual trigger (scaffold)
+  app.post(
+    '/:id/trigger',
+    { preHandler: [authenticate, requireRole('admin', 'manager')] },
+    async (request, reply) => {
+      const { id } = request.params as { id: string }
+      const snap = await db.collection('workflows').doc(id).get()
+      if (!snap.exists) return reply.status(404).send({ error: 'Workflow not found' })
+      const workflow = snap.data()!
+      if (!workflow.active) return reply.status(400).send({ error: 'Workflow is not active' })
+      if (workflow.trigger !== 'manual') return reply.status(400).send({ error: 'Workflow trigger is not manual' })
 
-    const actions = workflow.actions as z.infer<typeof actionSchema>[]
-    const results: Array<{ action: string; status: string }> = []
+      // Log a run record (actual action execution is handled by BullMQ workers)
+      const runRef = db.collection('workflow_runs').doc()
+      await runRef.set({
+        id: runRef.id,
+        workflowId: id,
+        triggeredBy: request.user.id,
+        status: 'queued',
+        payload: request.body ?? {},
+        createdAt: now(),
+      })
 
-    for (const action of actions) {
-      if (action.type === 'notify') {
-        await prisma.notification.create({
-          data: { userId: action.userId, title: action.title, body: action.body, type: 'workflow', link: action.link },
-        })
-        sendToUser(action.userId, 'notification', { title: action.title, body: action.body })
-        results.push({ action: 'notify', status: 'sent' })
-      } else if (action.type === 'email') {
-        // Email execution requires the worker + email provider — log for now
-        results.push({ action: 'email', status: 'queued' })
-      } else if (action.type === 'status_change') {
-        results.push({ action: 'status_change', status: 'queued' })
-      }
-    }
-
-    return reply.send({ workflow, results })
-  })
+      return reply.status(202).send({ message: 'Workflow queued', runId: runRef.id })
+    },
+  )
 }

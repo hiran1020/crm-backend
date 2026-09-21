@@ -13,21 +13,13 @@ export const config = {
   port: parseInt(optional('PORT', '3001'), 10),
   corsOrigin: optional('CORS_ORIGIN', 'http://localhost:5173'),
 
-  databaseUrl: required('DATABASE_URL'),
+  // Firebase Admin SDK — service account JSON as a string
+  firebaseServiceAccount: required('FIREBASE_SERVICE_ACCOUNT'),
+  firebaseStorageBucket: optional('FIREBASE_STORAGE_BUCKET', 'crm-v1-d8854.firebasestorage.app'),
+  firebaseProjectId: optional('FIREBASE_PROJECT_ID', 'crm-v1-d8854'),
 
-  jwtSecret: required('JWT_SECRET'),
-  jwtRefreshSecret: required('JWT_REFRESH_SECRET'),
-  jwtAccessExpiry: optional('JWT_ACCESS_EXPIRY', '15m'),
-  jwtRefreshExpiry: optional('JWT_REFRESH_EXPIRY', '7d'),
-
-  // Storage (S3 / R2) — optional; falls back to local disk when unset
-  s3Bucket: process.env.S3_BUCKET ?? '',
-  s3Region: optional('S3_REGION', 'us-east-1'),
-  s3Endpoint: process.env.S3_ENDPOINT ?? '',          // set for R2 / MinIO
-  s3PresignExpiry: parseInt(optional('S3_PRESIGN_EXPIRY', '900'), 10), // seconds
-
-  // Redis — required only for the BullMQ worker process
-  redisUrl: optional('REDIS_URL', 'redis://localhost:6379'),
+  // Pre-signed URL expiry in seconds (Firebase Storage signed URLs)
+  storagePresignExpiry: parseInt(optional('STORAGE_PRESIGN_EXPIRY', '900'), 10),
 
   isDev: optional('NODE_ENV', 'development') === 'development',
 } as const

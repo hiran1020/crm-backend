@@ -1,27 +1,13 @@
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
-import type { UserRole, UserStatus, Prisma } from '@prisma/client'
-import { prisma } from '../lib/prisma.js'
-import { hashPassword, toInitials } from '../lib/password.js'
-import { handlePrismaError } from '../lib/errors.js'
+import { auth, db, toDoc, toDocs, countQuery, now } from '../lib/firebase.js'
+import { handleFirestoreError } from '../lib/errors.js'
 import { authenticate } from '../middleware/authenticate.js'
 import { requireRole } from '../middleware/requireRole.js'
 
-// Columns safe to return — never include passwordHash
-const safeSelect = {
-  id: true,
-  name: true,
-  email: true,
-  role: true,
-  status: true,
-  phone: true,
-  jobTitle: true,
-  department: true,
-  avatarInitials: true,
-  lastLoginAt: true,
-  createdAt: true,
-  updatedAt: true,
-} satisfies Prisma.UserSelect
+function toInitials(name: string) {
+  return name.split(' ').map(p => p[0]).filter(Boolean).join('').toUpperCase().slice(0, 2)
+}
 
 const createBody = z.object({
   name: z.string().trim().min(1),
@@ -51,25 +37,24 @@ export async function usersRoutes(app: FastifyInstance) {
     '/',
     { preHandler: [authenticate, requireRole('admin', 'manager')] },
     async (request, reply) => {
-      const query = request.query as Record<string, string>
-      const page = Math.max(1, parseInt(query.page ?? '1', 10))
-      const pageSize = Math.min(100, Math.max(1, parseInt(query.pageSize ?? '20', 10)))
-      const skip = (page - 1) * pageSize
+      const q = request.query as Record<string, string>
+      const page = Math.max(1, parseInt(q.page ?? '1', 10))
+      const pageSize = Math.min(100, Math.max(1, parseInt(q.pageSize ?? '20', 10)))
 
-      const where: Prisma.UserWhereInput = {}
-      if (query.search) {
-        where.OR = [
-          { name: { contains: query.search, mode: 'insensitive' } },
-          { email: { contains: query.search, mode: 'insensitive' } },
-        ]
+      let query = db.collection('users') as FirebaseFirestore.Query
+      if (q.role)   query = query.where('role', '==', q.role)
+      if (q.status) query = query.where('status', '==', q.status)
+
+      const total = await countQuery(query)
+      const snap = await query.orderBy('name').offset((page - 1) * pageSize).limit(pageSize).get()
+      let data = toDocs(snap)
+
+      if (q.search) {
+        const s = q.search.toLowerCase()
+        data = data.filter(u =>
+          u.name?.toLowerCase().includes(s) || u.email?.toLowerCase().includes(s),
+        )
       }
-      if (query.role) where.role = query.role as UserRole
-      if (query.status) where.status = query.status as UserStatus
-
-      const [data, total] = await prisma.$transaction([
-        prisma.user.findMany({ where, select: safeSelect, skip, take: pageSize, orderBy: { name: 'asc' } }),
-        prisma.user.count({ where }),
-      ])
 
       return reply.send({ data, total, page, pageSize, totalPages: Math.ceil(total / pageSize) })
     },
@@ -84,82 +69,87 @@ export async function usersRoutes(app: FastifyInstance) {
       if (!result.success) {
         return reply.status(400).send({ error: 'Invalid request body', issues: result.error.issues })
       }
-      const { password, name, ...rest } = result.data
+      const { password, name, role, ...rest } = result.data
 
       try {
-        const user = await prisma.user.create({
-          data: {
-            ...rest,
-            name,
-            passwordHash: await hashPassword(password),
-            avatarInitials: toInitials(name),
-          },
-          select: safeSelect,
-        })
-        return reply.status(201).send(user)
+        // 1. Create Firebase Auth user
+        const fbUser = await auth.createUser({ email: rest.email, password, displayName: name })
+        // 2. Set role as custom claim
+        await auth.setCustomUserClaims(fbUser.uid, { role })
+        // 3. Write profile to Firestore
+        const profile = {
+          id: fbUser.uid,
+          name,
+          role,
+          ...rest,
+          avatarInitials: toInitials(name),
+          lastLoginAt: null,
+          createdAt: now(),
+          updatedAt: now(),
+        }
+        await db.collection('users').doc(fbUser.uid).set(profile)
+        return reply.status(201).send({ ...profile, id: fbUser.uid })
       } catch (err) {
-        return handlePrismaError(err, reply) ?? reply.status(500).send({ error: 'Internal server error' })
+        return handleFirestoreError(err, reply) ?? reply.status(500).send({ error: 'Internal server error' })
       }
     },
   )
 
   // GET /api/v1/users/:id
-  app.get(
-    '/:id',
-    { preHandler: authenticate },
-    async (request, reply) => {
-      const { id } = request.params as { id: string }
-
-      const user = await prisma.user.findUnique({ where: { id }, select: safeSelect })
-      if (!user) return reply.status(404).send({ error: 'User not found' })
-
-      return reply.send(user)
-    },
-  )
+  app.get('/:id', { preHandler: authenticate }, async (request, reply) => {
+    const { id } = request.params as { id: string }
+    const snap = await db.collection('users').doc(id).get()
+    const user = toDoc(snap)
+    if (!user) return reply.status(404).send({ error: 'User not found' })
+    return reply.send(user)
+  })
 
   // PATCH /api/v1/users/:id
-  app.patch(
-    '/:id',
-    { preHandler: authenticate },
-    async (request, reply) => {
-      const { id } = request.params as { id: string }
-      const caller = request.user
+  app.patch('/:id', { preHandler: authenticate }, async (request, reply) => {
+    const { id } = request.params as { id: string }
+    const caller = request.user
+    const isAdmin = caller.role === 'admin'
+    const isSelf = caller.id === id
 
-      // Only admins can edit others; managers/agents can edit only themselves
-      const isAdmin = caller.role === 'admin'
-      const isSelf = caller.id === id
-      if (!isAdmin && !isSelf) {
-        return reply.status(403).send({ error: 'Forbidden' })
-      }
+    if (!isAdmin && !isSelf) {
+      return reply.status(403).send({ error: 'Forbidden' })
+    }
 
-      const result = updateBody.safeParse(request.body)
-      if (!result.success) {
-        return reply.status(400).send({ error: 'Invalid request body', issues: result.error.issues })
-      }
+    const result = updateBody.safeParse(request.body)
+    if (!result.success) {
+      return reply.status(400).send({ error: 'Invalid request body', issues: result.error.issues })
+    }
 
-      const { password, role, name, ...rest } = result.data
+    const { password, role, name, email, ...rest } = result.data
 
-      // Only admins may change role
-      if (role !== undefined && !isAdmin) {
-        return reply.status(403).send({ error: 'Forbidden: only admins can change roles' })
-      }
+    if (role !== undefined && !isAdmin) {
+      return reply.status(403).send({ error: 'Forbidden: only admins can change roles' })
+    }
 
-      const data: Prisma.UserUpdateInput = { ...rest }
-      if (role) data.role = role
-      if (password) data.passwordHash = await hashPassword(password)
-      if (name) {
-        data.name = name
-        data.avatarInitials = toInitials(name)
-      }
+    try {
+      // Update Firebase Auth
+      const authUpdate: Record<string, unknown> = {}
+      if (email)    authUpdate.email       = email
+      if (password) authUpdate.password    = password
+      if (name)     authUpdate.displayName = name
+      if (Object.keys(authUpdate).length) await auth.updateUser(id, authUpdate)
 
-      try {
-        const user = await prisma.user.update({ where: { id }, data, select: safeSelect })
-        return reply.send(user)
-      } catch (err) {
-        return handlePrismaError(err, reply) ?? reply.status(500).send({ error: 'Internal server error' })
-      }
-    },
-  )
+      // Update custom claims if role changed
+      if (role) await auth.setCustomUserClaims(id, { role })
+
+      // Update Firestore profile
+      const update: Record<string, unknown> = { ...rest, updatedAt: now() }
+      if (name)  { update.name = name; update.avatarInitials = toInitials(name) }
+      if (email) update.email = email
+      if (role)  update.role  = role
+
+      await db.collection('users').doc(id).update(update)
+      const snap = await db.collection('users').doc(id).get()
+      return reply.send(toDoc(snap))
+    } catch (err) {
+      return handleFirestoreError(err, reply) ?? reply.status(500).send({ error: 'Internal server error' })
+    }
+  })
 
   // DELETE /api/v1/users/:id
   app.delete(
@@ -167,54 +157,40 @@ export async function usersRoutes(app: FastifyInstance) {
     { preHandler: [authenticate, requireRole('admin')] },
     async (request, reply) => {
       const { id } = request.params as { id: string }
-
       if (request.user.id === id) {
         return reply.status(400).send({ error: 'Cannot delete your own account' })
       }
-
       try {
-        await prisma.user.delete({ where: { id } })
+        await auth.deleteUser(id)
+        await db.collection('users').doc(id).delete()
         return reply.status(204).send()
       } catch (err) {
-        return handlePrismaError(err, reply) ?? reply.status(500).send({ error: 'Internal server error' })
+        return handleFirestoreError(err, reply) ?? reply.status(500).send({ error: 'Internal server error' })
       }
     },
   )
 
   // GET /api/v1/users/:id/stats
-  app.get(
-    '/:id/stats',
-    { preHandler: authenticate },
-    async (request, reply) => {
-      const { id } = request.params as { id: string }
+  app.get('/:id/stats', { preHandler: authenticate }, async (request, reply) => {
+    const { id } = request.params as { id: string }
 
-      const user = await prisma.user.findUnique({ where: { id }, select: { id: true } })
-      if (!user) return reply.status(404).send({ error: 'User not found' })
+    const [customersSnap, leadsSnap, openDealsSnap, wonDealsSnap, activitiesSnap] = await Promise.all([
+      db.collection('customers').where('ownerId', '==', id).count().get(),
+      db.collection('leads').where('ownerId', '==', id).count().get(),
+      db.collection('deals').where('ownerId', '==', id).where('stage', 'not-in', ['Won', 'Lost']).count().get(),
+      db.collection('deals').where('ownerId', '==', id).where('stage', '==', 'Won').get(),
+      db.collection('activities').where('owner', '==', id).count().get(),
+    ])
 
-      const [
-        customersOwned,
-        leadsOwned,
-        openDeals,
-        wonDeals,
-        wonRevenueAgg,
-        activitiesLogged,
-      ] = await prisma.$transaction([
-        prisma.customer.count({ where: { ownerId: id } }),
-        prisma.lead.count({ where: { ownerId: id } }),
-        prisma.deal.count({ where: { ownerId: id, stage: { notIn: ['Won', 'Lost'] } } }),
-        prisma.deal.count({ where: { ownerId: id, stage: 'Won' } }),
-        prisma.deal.aggregate({ where: { ownerId: id, stage: 'Won' }, _sum: { amount: true } }),
-        prisma.activity.count({ where: { owner: id } }),
-      ])
+    const wonRevenue = wonDealsSnap.docs.reduce((sum, d) => sum + (d.data().amount ?? 0), 0)
 
-      return reply.send({
-        customersOwned,
-        leadsOwned,
-        openDeals,
-        wonDeals,
-        wonRevenue: wonRevenueAgg._sum.amount ?? 0,
-        activitiesLogged,
-      })
-    },
-  )
+    return reply.send({
+      customersOwned: customersSnap.data().count,
+      leadsOwned: leadsSnap.data().count,
+      openDeals: openDealsSnap.data().count,
+      wonDeals: wonDealsSnap.size,
+      wonRevenue,
+      activitiesLogged: activitiesSnap.data().count,
+    })
+  })
 }

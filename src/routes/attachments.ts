@@ -1,138 +1,96 @@
-import type { FastifyInstance } from 'fastify'
-import multipart from '@fastify/multipart'
+import type { FastifyInstance, FastifyRequest } from 'fastify'
+import '@fastify/multipart'
 import { z } from 'zod'
-import { randomUUID } from 'crypto'
-import { extname } from 'path'
-import type { RelatedType } from '@prisma/client'
-import { prisma } from '../lib/prisma.js'
-import { handlePrismaError } from '../lib/errors.js'
+import { db, toDocs, toDoc, now } from '../lib/firebase.js'
 import { authenticate } from '../middleware/authenticate.js'
-import { uploadFile, getDownloadUrl, deleteFile, localFilePath } from '../lib/storage.js'
-import { createReadStream } from 'fs'
-import { existsSync } from 'fs'
+import { uploadFile, getSignedUrl, deleteFile } from '../lib/storage.js'
+import { writeAudit } from '../lib/audit.js'
 
-const MAX_FILE_SIZE = 50 * 1024 * 1024 // 50 MB
+const uploadBody = z.object({
+  entityType: z.enum(['customer', 'lead', 'deal', 'ticket', 'quote']),
+  entityId: z.string().min(1),
+})
 
 export async function attachmentsRoutes(app: FastifyInstance) {
-  await app.register(multipart, { limits: { fileSize: MAX_FILE_SIZE } })
+  // POST /api/v1/attachments — multipart file upload
+  app.post('/', { preHandler: authenticate }, async (request, reply) => {
+    const data = await request.file()
+    if (!data) return reply.status(400).send({ error: 'No file uploaded' })
 
-  // POST /api/v1/attachments/upload
-  // Accepts multipart/form-data with fields: file, relatedTo, relatedType, relatedName
-  app.post('/upload', { preHandler: authenticate }, async (request, reply) => {
-    const parts = request.parts()
-    let fileStream: AsyncIterable<Buffer> | null = null
-    let filename = ''
-    let mimeType = ''
-    let relatedTo = ''
-    let relatedType = ''
+    const entityType = request.body ? (request.body as Record<string, { value: string }>).entityType?.value : undefined
+    const entityId = request.body ? (request.body as Record<string, { value: string }>).entityId?.value : undefined
 
-    for await (const part of parts) {
-      if (part.type === 'file') {
-        filename = part.filename
-        mimeType = part.mimetype
-        fileStream = part.file as AsyncIterable<Buffer>
-      } else {
-        const value = await part.value as string
-        if (part.fieldname === 'relatedTo') relatedTo = value
-        if (part.fieldname === 'relatedType') relatedType = value
-      }
+    const parsed = uploadBody.safeParse({ entityType, entityId })
+    if (!parsed.success) {
+      return reply.status(400).send({ error: 'entityType and entityId are required', issues: parsed.error.issues })
     }
 
-    const validate = z.object({
-      relatedTo: z.string().uuid(),
-      relatedType: z.enum(['customer', 'lead', 'deal']),
-      filename: z.string().min(1),
-      mimeType: z.string().min(1),
-    }).safeParse({ relatedTo, relatedType, filename, mimeType })
+    const chunks: Buffer[] = []
+    for await (const chunk of data.file) chunks.push(chunk)
+    const buffer = Buffer.concat(chunks)
 
-    if (!validate.success || !fileStream) {
-      return reply.status(400).send({ error: 'Missing or invalid fields: file, relatedTo, relatedType required' })
+    const storagePath = `attachments/${parsed.data.entityType}/${parsed.data.entityId}/${Date.now()}_${data.filename}`
+    const { path: uploadedPath, size } = await uploadFile(buffer, storagePath, data.mimetype)
+    const url = await getSignedUrl(uploadedPath)
+
+    const docRef = db.collection('attachments').doc()
+    const attachment = {
+      id: docRef.id,
+      entityType: parsed.data.entityType,
+      entityId: parsed.data.entityId,
+      filename: data.filename,
+      mimetype: data.mimetype,
+      size,
+      storagePath: uploadedPath,
+      url,
+      uploadedBy: request.user.id,
+      createdAt: now(),
     }
-
-    const ext = extname(filename)
-    const key = `${relatedType}/${relatedTo}/${randomUUID()}${ext}`
-
-    try {
-      const chunks: Buffer[] = []
-      for await (const chunk of fileStream) {
-        chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk))
-      }
-      const buf = Buffer.concat(chunks)
-      const sizeBytes = buf.byteLength
-
-      const { Readable } = await import('stream')
-      await uploadFile(key, Readable.from(buf), mimeType)
-
-      const attachment = await prisma.attachment.create({
-        data: {
-          filename,
-          mimeType,
-          sizeBytes,
-          storageKey: key,
-          relatedTo,
-          relatedType: relatedType as RelatedType,
-          uploadedBy: request.user.id,
-        },
-      })
-      return reply.status(201).send(attachment)
-    } catch (err) {
-      return handlePrismaError(err, reply) ?? reply.status(500).send({ error: 'Internal server error' })
-    }
+    await docRef.set(attachment)
+    writeAudit({ entityType: 'attachment', entityId: docRef.id, action: 'created', actorId: request.user.id, after: { filename: data.filename, size } })
+    return reply.status(201).send(attachment)
   })
 
-  // GET /api/v1/attachments?relatedTo=:id&relatedType=customer
+  // GET /api/v1/attachments?entityType=deal&entityId=xxx
   app.get('/', { preHandler: authenticate }, async (request, reply) => {
     const q = request.query as Record<string, string>
-    const where: { relatedTo?: string; relatedType?: RelatedType } = {}
-    if (q.relatedTo) where.relatedTo = q.relatedTo
-    if (q.relatedType) where.relatedType = q.relatedType as RelatedType
+    if (!q.entityId) return reply.status(400).send({ error: 'entityId is required' })
 
-    const attachments = await prisma.attachment.findMany({
-      where,
-      orderBy: { createdAt: 'desc' },
-    })
-    return reply.send({ data: attachments })
+    let query = db.collection('attachments').where('entityId', '==', q.entityId) as FirebaseFirestore.Query
+    if (q.entityType) query = query.where('entityType', '==', q.entityType)
+    const snap = await query.orderBy('createdAt', 'desc').get()
+
+    const docs = await Promise.all(
+      snap.docs.map(async d => {
+        const data = d.data()
+        const freshUrl = await getSignedUrl(data.storagePath).catch(() => null)
+        return { id: d.id, ...data, url: freshUrl ?? data.url }
+      }),
+    )
+    return reply.send({ data: docs })
   })
 
-  // GET /api/v1/attachments/:id  — returns a pre-signed download URL
+  // GET /api/v1/attachments/:id — get signed URL (refresh)
   app.get('/:id', { preHandler: authenticate }, async (request, reply) => {
     const { id } = request.params as { id: string }
-    const attachment = await prisma.attachment.findUnique({ where: { id } })
-    if (!attachment) return reply.status(404).send({ error: 'Attachment not found' })
-
-    const url = await getDownloadUrl(attachment.storageKey)
-    return reply.send({ ...attachment, downloadUrl: url })
-  })
-
-  // GET /api/v1/attachments/local/:key  — serves files from local disk (dev only)
-  app.get('/local/:key', async (request, reply) => {
-    const { key } = request.params as { key: string }
-    const decoded = decodeURIComponent(key)
-    const filePath = localFilePath(decoded)
-
-    if (!existsSync(filePath)) return reply.status(404).send({ error: 'File not found' })
-
-    const attachment = await prisma.attachment.findFirst({ where: { storageKey: decoded } })
-    const mimeType = attachment?.mimeType ?? 'application/octet-stream'
-
-    return reply
-      .header('Content-Type', mimeType)
-      .header('Content-Disposition', `inline; filename="${attachment?.filename ?? decoded}"`)
-      .send(createReadStream(filePath))
+    const snap = await db.collection('attachments').doc(id).get()
+    if (!snap.exists) return reply.status(404).send({ error: 'Attachment not found' })
+    const data = snap.data()!
+    const url = await getSignedUrl(data.storagePath)
+    return reply.send({ id: snap.id, ...data, url })
   })
 
   // DELETE /api/v1/attachments/:id
   app.delete('/:id', { preHandler: authenticate }, async (request, reply) => {
     const { id } = request.params as { id: string }
-    const attachment = await prisma.attachment.findUnique({ where: { id } })
-    if (!attachment) return reply.status(404).send({ error: 'Attachment not found' })
-
-    await deleteFile(attachment.storageKey)
-    try {
-      await prisma.attachment.delete({ where: { id } })
-      return reply.status(204).send()
-    } catch (err) {
-      return handlePrismaError(err, reply) ?? reply.status(500).send({ error: 'Internal server error' })
-    }
+    const snap = await db.collection('attachments').doc(id).get()
+    if (!snap.exists) return reply.status(404).send({ error: 'Attachment not found' })
+    const data = snap.data()!
+    await Promise.all([
+      deleteFile(data.storagePath).catch(() => {}),
+      db.collection('attachments').doc(id).delete(),
+    ])
+    writeAudit({ entityType: 'attachment', entityId: id, action: 'deleted', actorId: request.user.id, before: { filename: data.filename } })
+    return reply.status(204).send()
   })
 }

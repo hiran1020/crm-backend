@@ -1,23 +1,20 @@
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
-import type { DealStage, Prisma } from '@prisma/client'
-import { prisma } from '../lib/prisma.js'
-import { handlePrismaError } from '../lib/errors.js'
+import { db, toDocs, toDoc, countQuery, now } from '../lib/firebase.js'
 import { authenticate } from '../middleware/authenticate.js'
 import { requireRole } from '../middleware/requireRole.js'
 import { writeAudit } from '../lib/audit.js'
 
-const dealInclude = {
-  owner: { select: { id: true, name: true, avatarInitials: true } },
-  customer: { select: { id: true, firstName: true, lastName: true, company: true } },
-} satisfies Prisma.DealInclude
-
 const createBody = z.object({
   title: z.string().trim().min(1),
-  customerId: z.string().uuid(),
+  customerId: z.string().min(1),
+  customerName: z.string().min(1),     // denormalized
+  customerCompany: z.string().min(1),  // denormalized
   amount: z.number().min(0),
   stage: z.enum(['New', 'Qualified', 'Proposal', 'Negotiation', 'Won', 'Lost']).default('New'),
-  ownerId: z.string().uuid(),
+  ownerId: z.string().min(1),
+  ownerName: z.string().min(1),
+  ownerInitials: z.string().min(1),
   expectedCloseDate: z.string().min(1),
   description: z.string().optional(),
   probability: z.number().int().min(0).max(100).optional(),
@@ -35,28 +32,23 @@ export async function dealsRoutes(app: FastifyInstance) {
     const q = request.query as Record<string, string>
     const page = Math.max(1, parseInt(q.page ?? '1', 10))
     const pageSize = Math.min(100, Math.max(1, parseInt(q.pageSize ?? '20', 10)))
-    const skip = (page - 1) * pageSize
 
-    const where: Prisma.DealWhereInput = {}
+    let query = db.collection('deals') as FirebaseFirestore.Query
+    if (q.stage)      query = query.where('stage', '==', q.stage)
+    if (q.ownerId)    query = query.where('ownerId', '==', q.ownerId)
+    if (q.customerId) query = query.where('customerId', '==', q.customerId)
+
+    const total = await countQuery(query)
+    const snap = await query.orderBy('createdAt', 'desc').offset((page - 1) * pageSize).limit(pageSize).get()
+    let data = toDocs(snap)
+
     if (q.search) {
-      where.OR = [
-        { title: { contains: q.search, mode: 'insensitive' } },
-        { customer: { company: { contains: q.search, mode: 'insensitive' } } },
-      ]
+      const s = q.search.toLowerCase()
+      data = data.filter(d =>
+        d.title?.toLowerCase().includes(s) ||
+        d.customerCompany?.toLowerCase().includes(s),
+      )
     }
-    if (q.stage) where.stage = q.stage as DealStage
-    if (q.ownerId) where.ownerId = q.ownerId
-    if (q.customerId) where.customerId = q.customerId
-
-    const orderBy: Prisma.DealOrderByWithRelationInput =
-      q.sortBy === 'amount' ? { amount: (q.sortDir as Prisma.SortOrder) ?? 'desc' }
-        : q.sortBy === 'expectedCloseDate' ? { expectedCloseDate: (q.sortDir as Prisma.SortOrder) ?? 'asc' }
-        : { createdAt: 'desc' }
-
-    const [data, total] = await prisma.$transaction([
-      prisma.deal.findMany({ where, include: dealInclude, skip, take: pageSize, orderBy }),
-      prisma.deal.count({ where }),
-    ])
 
     return reply.send({ data, total, page, pageSize, totalPages: Math.ceil(total / pageSize) })
   })
@@ -67,20 +59,18 @@ export async function dealsRoutes(app: FastifyInstance) {
     if (!result.success) {
       return reply.status(400).send({ error: 'Invalid request body', issues: result.error.issues })
     }
-
-    try {
-      const deal = await prisma.deal.create({ data: result.data, include: dealInclude })
-      writeAudit({ entityType: 'deal', entityId: deal.id, action: 'created', actorId: request.user.id, after: deal })
-      return reply.status(201).send(deal)
-    } catch (err) {
-      return handlePrismaError(err, reply) ?? reply.status(500).send({ error: 'Internal server error' })
-    }
+    const docRef = db.collection('deals').doc()
+    const deal = { id: docRef.id, ...result.data, createdAt: now(), updatedAt: now() }
+    await docRef.set(deal)
+    writeAudit({ entityType: 'deal', entityId: docRef.id, action: 'created', actorId: request.user.id, after: result.data })
+    return reply.status(201).send(deal)
   })
 
   // GET /api/v1/deals/:id
   app.get('/:id', { preHandler: authenticate }, async (request, reply) => {
     const { id } = request.params as { id: string }
-    const deal = await prisma.deal.findUnique({ where: { id }, include: dealInclude })
+    const snap = await db.collection('deals').doc(id).get()
+    const deal = toDoc(snap)
     if (!deal) return reply.status(404).send({ error: 'Deal not found' })
     return reply.send(deal)
   })
@@ -92,15 +82,13 @@ export async function dealsRoutes(app: FastifyInstance) {
     if (!result.success) {
       return reply.status(400).send({ error: 'Invalid request body', issues: result.error.issues })
     }
-
-    try {
-      const existing = await prisma.deal.findUnique({ where: { id } })
-      const deal = await prisma.deal.update({ where: { id }, data: result.data, include: dealInclude })
-      writeAudit({ entityType: 'deal', entityId: id, action: 'updated', actorId: request.user.id, before: existing, after: deal })
-      return reply.send(deal)
-    } catch (err) {
-      return handlePrismaError(err, reply) ?? reply.status(500).send({ error: 'Internal server error' })
-    }
+    const snap = await db.collection('deals').doc(id).get()
+    if (!snap.exists) return reply.status(404).send({ error: 'Deal not found' })
+    const before = snap.data()
+    await db.collection('deals').doc(id).update({ ...result.data, updatedAt: now() })
+    const updated = toDoc(await db.collection('deals').doc(id).get())
+    writeAudit({ entityType: 'deal', entityId: id, action: 'updated', actorId: request.user.id, before, after: result.data })
+    return reply.send(updated)
   })
 
   // DELETE /api/v1/deals/:id
@@ -109,12 +97,12 @@ export async function dealsRoutes(app: FastifyInstance) {
     { preHandler: [authenticate, requireRole('admin', 'manager')] },
     async (request, reply) => {
       const { id } = request.params as { id: string }
-      try {
-        await prisma.deal.delete({ where: { id } })
-        return reply.status(204).send()
-      } catch (err) {
-        return handlePrismaError(err, reply) ?? reply.status(500).send({ error: 'Internal server error' })
-      }
+      const snap = await db.collection('deals').doc(id).get()
+      if (!snap.exists) return reply.status(404).send({ error: 'Deal not found' })
+      const before = snap.data()
+      await db.collection('deals').doc(id).delete()
+      writeAudit({ entityType: 'deal', entityId: id, action: 'deleted', actorId: request.user.id, before })
+      return reply.status(204).send()
     },
   )
 
@@ -125,31 +113,21 @@ export async function dealsRoutes(app: FastifyInstance) {
     if (!result.success) {
       return reply.status(400).send({ error: 'Invalid request body', issues: result.error.issues })
     }
-
-    try {
-      const existing = await prisma.deal.findUnique({ where: { id } })
-      const deal = await prisma.deal.update({
-        where: { id },
-        data: { stage: result.data.stage },
-        include: dealInclude,
-      })
-      writeAudit({ entityType: 'deal', entityId: id, action: 'updated', actorId: request.user.id, before: existing, after: deal })
-      return reply.send(deal)
-    } catch (err) {
-      return handlePrismaError(err, reply) ?? reply.status(500).send({ error: 'Internal server error' })
-    }
+    const snap = await db.collection('deals').doc(id).get()
+    if (!snap.exists) return reply.status(404).send({ error: 'Deal not found' })
+    const before = snap.data()
+    await db.collection('deals').doc(id).update({ stage: result.data.stage, updatedAt: now() })
+    const updated = toDoc(await db.collection('deals').doc(id).get())
+    writeAudit({ entityType: 'deal', entityId: id, action: 'updated', actorId: request.user.id, before, after: { stage: result.data.stage } })
+    return reply.send(updated)
   })
 
   // GET /api/v1/deals/:id/activities
   app.get('/:id/activities', { preHandler: authenticate }, async (request, reply) => {
     const { id } = request.params as { id: string }
-    const deal = await prisma.deal.findUnique({ where: { id }, select: { id: true } })
-    if (!deal) return reply.status(404).send({ error: 'Deal not found' })
-
-    const activities = await prisma.activity.findMany({
-      where: { relatedTo: id, relatedType: 'deal' },
-      orderBy: { createdAt: 'desc' },
-    })
-    return reply.send({ data: activities })
+    const snap = await db.collection('activities')
+      .where('relatedTo', '==', id).where('relatedType', '==', 'deal')
+      .orderBy('createdAt', 'desc').get()
+    return reply.send({ data: toDocs(snap) })
   })
 }

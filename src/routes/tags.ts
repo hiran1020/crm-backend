@@ -1,7 +1,6 @@
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
-import { prisma } from '../lib/prisma.js'
-import { handlePrismaError } from '../lib/errors.js'
+import { db, toDocs, toDoc, now } from '../lib/firebase.js'
 import { authenticate } from '../middleware/authenticate.js'
 import { requireRole } from '../middleware/requireRole.js'
 
@@ -15,8 +14,8 @@ const updateBody = createBody.partial()
 export async function tagsRoutes(app: FastifyInstance) {
   // GET /api/v1/tags
   app.get('/', { preHandler: authenticate }, async (_request, reply) => {
-    const tags = await prisma.tag.findMany({ orderBy: { name: 'asc' } })
-    return reply.send({ data: tags })
+    const snap = await db.collection('tags').orderBy('name').get()
+    return reply.send({ data: toDocs(snap) })
   })
 
   // POST /api/v1/tags
@@ -28,20 +27,18 @@ export async function tagsRoutes(app: FastifyInstance) {
       if (!result.success) {
         return reply.status(400).send({ error: 'Invalid request body', issues: result.error.issues })
       }
-
-      try {
-        const tag = await prisma.tag.create({ data: result.data })
-        return reply.status(201).send(tag)
-      } catch (err) {
-        return handlePrismaError(err, reply) ?? reply.status(500).send({ error: 'Internal server error' })
-      }
+      const docRef = db.collection('tags').doc()
+      const tag = { id: docRef.id, ...result.data }
+      await docRef.set(tag)
+      return reply.status(201).send(tag)
     },
   )
 
   // GET /api/v1/tags/:id
   app.get('/:id', { preHandler: authenticate }, async (request, reply) => {
     const { id } = request.params as { id: string }
-    const tag = await prisma.tag.findUnique({ where: { id } })
+    const snap = await db.collection('tags').doc(id).get()
+    const tag = toDoc(snap)
     if (!tag) return reply.status(404).send({ error: 'Tag not found' })
     return reply.send(tag)
   })
@@ -56,13 +53,10 @@ export async function tagsRoutes(app: FastifyInstance) {
       if (!result.success) {
         return reply.status(400).send({ error: 'Invalid request body', issues: result.error.issues })
       }
-
-      try {
-        const tag = await prisma.tag.update({ where: { id }, data: result.data })
-        return reply.send(tag)
-      } catch (err) {
-        return handlePrismaError(err, reply) ?? reply.status(500).send({ error: 'Internal server error' })
-      }
+      const snap = await db.collection('tags').doc(id).get()
+      if (!snap.exists) return reply.status(404).send({ error: 'Tag not found' })
+      await db.collection('tags').doc(id).update(result.data as Record<string, unknown>)
+      return reply.send(toDoc(await db.collection('tags').doc(id).get()))
     },
   )
 
@@ -72,12 +66,10 @@ export async function tagsRoutes(app: FastifyInstance) {
     { preHandler: [authenticate, requireRole('admin', 'manager')] },
     async (request, reply) => {
       const { id } = request.params as { id: string }
-      try {
-        await prisma.tag.delete({ where: { id } })
-        return reply.status(204).send()
-      } catch (err) {
-        return handlePrismaError(err, reply) ?? reply.status(500).send({ error: 'Internal server error' })
-      }
+      const snap = await db.collection('tags').doc(id).get()
+      if (!snap.exists) return reply.status(404).send({ error: 'Tag not found' })
+      await db.collection('tags').doc(id).delete()
+      return reply.status(204).send()
     },
   )
 }

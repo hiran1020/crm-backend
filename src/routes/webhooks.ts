@@ -1,50 +1,18 @@
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
-import { prisma } from '../lib/prisma.js'
-import { handlePrismaError } from '../lib/errors.js'
+import { db, toDocs, toDoc, now } from '../lib/firebase.js'
 import { authenticate } from '../middleware/authenticate.js'
 import { requireRole } from '../middleware/requireRole.js'
-
-// Webhooks are stored in a generic JSON table using a Workflow record as backing store.
-// We use a dedicated Prisma model-free approach: store configs in a custom table via raw.
-// Since the schema has no dedicated webhooks table, we model them as serialised JSON in the
-// existing `workflows` table with entityType scoped to a special sentinel — OR we add a new
-// table via migration. For now, implement in-memory + DB via a simple JSON store in the
-// `workflows` table with name prefix "webhook:".
-//
-// Production: add a `webhooks` table in a follow-up migration. The API contract below is stable.
+import crypto from 'crypto'
 
 const createBody = z.object({
   url: z.string().url(),
-  events: z.array(z.string()).min(1),
-  secret: z.string().optional(),
+  events: z.array(z.string().min(1)).min(1),
   description: z.string().optional(),
-  enabled: z.boolean().default(true),
+  active: z.boolean().default(true),
 })
 
 const updateBody = createBody.partial()
-
-type WebhookConfig = {
-  url: string
-  events: string[]
-  secret?: string
-  description?: string
-  enabled: boolean
-}
-
-function toWebhook(w: { id: string; name: string; actions: unknown; enabled: boolean; createdAt: Date; updatedAt: Date }) {
-  const cfg = w.actions as WebhookConfig
-  return {
-    id: w.id,
-    url: cfg.url,
-    events: cfg.events,
-    secret: cfg.secret ? '***' : undefined,
-    description: cfg.description,
-    enabled: w.enabled,
-    createdAt: w.createdAt,
-    updatedAt: w.updatedAt,
-  }
-}
 
 export async function webhooksRoutes(app: FastifyInstance) {
   // GET /api/v1/webhooks
@@ -52,11 +20,10 @@ export async function webhooksRoutes(app: FastifyInstance) {
     '/',
     { preHandler: [authenticate, requireRole('admin')] },
     async (_request, reply) => {
-      const rows = await prisma.workflow.findMany({
-        where: { name: { startsWith: 'webhook:' } },
-        orderBy: { createdAt: 'desc' },
-      })
-      return reply.send({ data: rows.map(toWebhook) })
+      const snap = await db.collection('webhooks').orderBy('createdAt', 'desc').get()
+      // Never expose secret in list
+      const data = toDocs<Record<string, unknown>>(snap).map(({ secret: _s, ...w }) => w)
+      return reply.send({ data })
     },
   )
 
@@ -69,21 +36,12 @@ export async function webhooksRoutes(app: FastifyInstance) {
       if (!result.success) {
         return reply.status(400).send({ error: 'Invalid request body', issues: result.error.issues })
       }
-      const { url, events, secret, description, enabled } = result.data
-      try {
-        const row = await prisma.workflow.create({
-          data: {
-            name: `webhook:${url}`,
-            entityType: 'customer',
-            trigger: { event: 'created', entityType: 'customer' },
-            actions: { url, events, secret, description, enabled } as object,
-            enabled,
-          },
-        })
-        return reply.status(201).send(toWebhook(row))
-      } catch (err) {
-        return handlePrismaError(err, reply) ?? reply.status(500).send({ error: 'Internal server error' })
-      }
+      const secret = crypto.randomBytes(32).toString('hex')
+      const docRef = db.collection('webhooks').doc()
+      const webhook = { id: docRef.id, ...result.data, secret, deliveryCount: 0, failureCount: 0, createdAt: now(), updatedAt: now() }
+      await docRef.set(webhook)
+      // Return secret once on creation
+      return reply.status(201).send(webhook)
     },
   )
 
@@ -93,9 +51,10 @@ export async function webhooksRoutes(app: FastifyInstance) {
     { preHandler: [authenticate, requireRole('admin')] },
     async (request, reply) => {
       const { id } = request.params as { id: string }
-      const row = await prisma.workflow.findFirst({ where: { id, name: { startsWith: 'webhook:' } } })
-      if (!row) return reply.status(404).send({ error: 'Webhook not found' })
-      return reply.send(toWebhook(row))
+      const snap = await db.collection('webhooks').doc(id).get()
+      if (!snap.exists) return reply.status(404).send({ error: 'Webhook not found' })
+      const { secret: _s, ...data } = { id: snap.id, ...snap.data() } as Record<string, unknown>
+      return reply.send(data)
     },
   )
 
@@ -109,26 +68,12 @@ export async function webhooksRoutes(app: FastifyInstance) {
       if (!result.success) {
         return reply.status(400).send({ error: 'Invalid request body', issues: result.error.issues })
       }
-
-      const existing = await prisma.workflow.findFirst({ where: { id, name: { startsWith: 'webhook:' } } })
-      if (!existing) return reply.status(404).send({ error: 'Webhook not found' })
-
-      const prev = existing.actions as WebhookConfig
-      const merged: WebhookConfig = { ...prev, ...result.data }
-
-      try {
-        const row = await prisma.workflow.update({
-          where: { id },
-          data: {
-            enabled: merged.enabled,
-            actions: merged as object,
-            ...(merged.url ? { name: `webhook:${merged.url}` } : {}),
-          },
-        })
-        return reply.send(toWebhook(row))
-      } catch (err) {
-        return handlePrismaError(err, reply) ?? reply.status(500).send({ error: 'Internal server error' })
-      }
+      const snap = await db.collection('webhooks').doc(id).get()
+      if (!snap.exists) return reply.status(404).send({ error: 'Webhook not found' })
+      await db.collection('webhooks').doc(id).update({ ...result.data, updatedAt: now() })
+      const updated = { id, ...((await db.collection('webhooks').doc(id).get()).data() ?? {}) } as Record<string, unknown>
+      const { secret: _s, ...data } = updated
+      return reply.send(data)
     },
   )
 
@@ -138,42 +83,38 @@ export async function webhooksRoutes(app: FastifyInstance) {
     { preHandler: [authenticate, requireRole('admin')] },
     async (request, reply) => {
       const { id } = request.params as { id: string }
-      const existing = await prisma.workflow.findFirst({ where: { id, name: { startsWith: 'webhook:' } } })
-      if (!existing) return reply.status(404).send({ error: 'Webhook not found' })
-
-      try {
-        await prisma.workflow.delete({ where: { id } })
-        return reply.status(204).send()
-      } catch (err) {
-        return handlePrismaError(err, reply) ?? reply.status(500).send({ error: 'Internal server error' })
-      }
+      const snap = await db.collection('webhooks').doc(id).get()
+      if (!snap.exists) return reply.status(404).send({ error: 'Webhook not found' })
+      await db.collection('webhooks').doc(id).delete()
+      return reply.status(204).send()
     },
   )
 
-  // POST /api/v1/webhooks/:id/test  — fire a test ping to the webhook URL
+  // POST /api/v1/webhooks/:id/rotate-secret
   app.post(
-    '/:id/test',
+    '/:id/rotate-secret',
     { preHandler: [authenticate, requireRole('admin')] },
     async (request, reply) => {
       const { id } = request.params as { id: string }
-      const row = await prisma.workflow.findFirst({ where: { id, name: { startsWith: 'webhook:' } } })
-      if (!row) return reply.status(404).send({ error: 'Webhook not found' })
+      const snap = await db.collection('webhooks').doc(id).get()
+      if (!snap.exists) return reply.status(404).send({ error: 'Webhook not found' })
+      const newSecret = crypto.randomBytes(32).toString('hex')
+      await db.collection('webhooks').doc(id).update({ secret: newSecret, updatedAt: now() })
+      return reply.send({ secret: newSecret })
+    },
+  )
 
-      const cfg = row.actions as WebhookConfig
-      const payload = { event: 'ping', timestamp: new Date().toISOString() }
-
-      try {
-        const res = await fetch(cfg.url, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
-          signal: AbortSignal.timeout(10_000),
-        })
-        return reply.send({ success: res.ok, status: res.status })
-      } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : 'Unknown error'
-        return reply.status(502).send({ success: false, error: msg })
-      }
+  // GET /api/v1/webhooks/:id/deliveries — recent delivery log
+  app.get(
+    '/:id/deliveries',
+    { preHandler: [authenticate, requireRole('admin')] },
+    async (request, reply) => {
+      const { id } = request.params as { id: string }
+      const snap = await db.collection('webhooks').doc(id).get()
+      if (!snap.exists) return reply.status(404).send({ error: 'Webhook not found' })
+      const deliveries = await db.collection('webhooks').doc(id)
+        .collection('deliveries').orderBy('createdAt', 'desc').limit(50).get()
+      return reply.send({ data: toDocs(deliveries) })
     },
   )
 }
