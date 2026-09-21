@@ -1,4 +1,4 @@
-import { buildApp } from '../src/app.js'
+import { buildApp } from './app.js'
 
 const app = await buildApp()
 
