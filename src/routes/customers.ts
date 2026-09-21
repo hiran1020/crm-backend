@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
-import { db, toDocs, toDoc, countQuery, now } from '../lib/firebase.js'
+import { db, toDocs, toDoc, pagedList, now } from '../lib/firebase.js'
 import { handleFirestoreError } from '../lib/errors.js'
 import { authenticate } from '../middleware/authenticate.js'
 import { requireRole } from '../middleware/requireRole.js'
@@ -28,24 +28,33 @@ export async function customersRoutes(app: FastifyInstance) {
   app.get('/', { preHandler: authenticate }, async (request, reply) => {
     const q = request.query as Record<string, string>
     const page = Math.max(1, parseInt(q.page ?? '1', 10))
-    const pageSize = Math.min(100, Math.max(1, parseInt(q.pageSize ?? '20', 10)))
+    const pageSize = Math.min(500, Math.max(1, parseInt(q.pageSize ?? '20', 10)))
+
+    // Email is a unique field — return the single match directly without ordering.
+    if (q.email) {
+      const snap = await db.collection('customers').where('email', '==', q.email).get()
+      const data = toDocs(snap)
+      return reply.send({ data, total: data.length, page: 1, pageSize: data.length, totalPages: 1 })
+    }
 
     let query = db.collection('customers') as FirebaseFirestore.Query
+    const hasFilters = !!(q.status || q.ownerId || q.tagId)
     if (q.status)  query = query.where('status', '==', q.status)
     if (q.ownerId) query = query.where('ownerId', '==', q.ownerId)
     if (q.tagId)   query = query.where('tagIds', 'array-contains', q.tagId)
 
-    const total = await countQuery(query)
-    const snap = await query.orderBy('lastName').offset((page - 1) * pageSize).limit(pageSize).get()
-    let data = toDocs(snap)
+    // customers are ordered by lastName; for filtered queries sort in memory, no composite index needed
+    let { data, total } = await pagedList({
+      query, hasFilters, orderField: 'lastName', orderDir: 'asc', page, pageSize,
+    })
 
     if (q.search) {
       const s = q.search.toLowerCase()
-      data = data.filter(c =>
-        c.firstName?.toLowerCase().includes(s) ||
-        c.lastName?.toLowerCase().includes(s) ||
-        c.email?.toLowerCase().includes(s) ||
-        c.company?.toLowerCase().includes(s),
+      data = data.filter((c: Record<string, unknown>) =>
+        String(c.firstName ?? '').toLowerCase().includes(s) ||
+        String(c.lastName ?? '').toLowerCase().includes(s) ||
+        String(c.email ?? '').toLowerCase().includes(s) ||
+        String(c.company ?? '').toLowerCase().includes(s),
       )
     }
 

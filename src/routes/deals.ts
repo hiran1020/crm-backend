@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
-import { db, toDocs, toDoc, countQuery, now } from '../lib/firebase.js'
+import { db, toDocs, toDoc, pagedList, now } from '../lib/firebase.js'
 import { authenticate } from '../middleware/authenticate.js'
 import { requireRole } from '../middleware/requireRole.js'
 import { writeAudit } from '../lib/audit.js'
@@ -31,22 +31,21 @@ export async function dealsRoutes(app: FastifyInstance) {
   app.get('/', { preHandler: authenticate }, async (request, reply) => {
     const q = request.query as Record<string, string>
     const page = Math.max(1, parseInt(q.page ?? '1', 10))
-    const pageSize = Math.min(100, Math.max(1, parseInt(q.pageSize ?? '20', 10)))
+    const pageSize = Math.min(500, Math.max(1, parseInt(q.pageSize ?? '20', 10)))
 
     let query = db.collection('deals') as FirebaseFirestore.Query
+    const hasFilters = !!(q.stage || q.ownerId || q.customerId)
     if (q.stage)      query = query.where('stage', '==', q.stage)
     if (q.ownerId)    query = query.where('ownerId', '==', q.ownerId)
     if (q.customerId) query = query.where('customerId', '==', q.customerId)
 
-    const total = await countQuery(query)
-    const snap = await query.orderBy('createdAt', 'desc').offset((page - 1) * pageSize).limit(pageSize).get()
-    let data = toDocs(snap)
+    let { data, total } = await pagedList({ query, hasFilters, orderField: 'createdAt', page, pageSize })
 
     if (q.search) {
       const s = q.search.toLowerCase()
-      data = data.filter(d =>
-        d.title?.toLowerCase().includes(s) ||
-        d.customerCompany?.toLowerCase().includes(s),
+      data = data.filter((d: Record<string, unknown>) =>
+        String(d.title ?? '').toLowerCase().includes(s) ||
+        String(d.customerCompany ?? '').toLowerCase().includes(s),
       )
     }
 

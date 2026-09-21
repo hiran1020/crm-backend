@@ -213,6 +213,21 @@ async function run() {
     assert(data.every(c => c['status'] === 'Active'), 'non-Active item in results')
   })
 
+  await test('GET /customers?email= → lookup by email', async () => {
+    const r = await api('GET', `/customers?email=test.customer@example.com`, adminToken)
+    assertStatus(r.status, 200)
+    const data = r.body['data'] as ApiBody[]
+    assert(data.length >= 1, 'expected at least 1 result for known email')
+    assert(data[0]['email'] === 'test.customer@example.com', 'wrong email in result')
+  })
+
+  await test('GET /customers?email=missing@example.com → empty result', async () => {
+    const r = await api('GET', '/customers?email=missing@nobody.com', adminToken)
+    assertStatus(r.status, 200)
+    const data = r.body['data'] as unknown[]
+    assert(data.length === 0, 'expected empty result for unknown email')
+  })
+
   await test('GET /customers?search=test → search', async () => {
     const r = await api('GET', '/customers?search=test', adminToken)
     assertStatus(r.status, 200)
@@ -425,11 +440,25 @@ async function run() {
     assertField(r.body, 'completed', true)
   })
 
-  await test('GET /activities?type=note → filter', async () => {
+  await test('GET /activities?type=note → filter by type', async () => {
     const r = await api('GET', '/activities?type=note', adminToken)
     assertStatus(r.status, 200)
     const data = r.body['data'] as ApiBody[]
     assert(data.every(a => a['type'] === 'note'), 'non-note item in results')
+  })
+
+  await test('GET /activities?completed=true → filter by completed', async () => {
+    const r = await api('GET', '/activities?completed=true', adminToken)
+    assertStatus(r.status, 200)
+    const data = r.body['data'] as ApiBody[]
+    assert(data.every(a => a['completed'] === true), 'non-completed item in results')
+  })
+
+  await test('GET /activities?type=note&completed=true → combined filter (needs composite index)', async () => {
+    const r = await api('GET', '/activities?type=note&completed=true', adminToken)
+    assertStatus(r.status, 200)
+    const data = r.body['data'] as ApiBody[]
+    assert(data.every(a => a['type'] === 'note' && a['completed'] === true), 'wrong item in filtered results')
   })
 
   await test('DELETE /activities/:id → 204', async () => {
@@ -604,6 +633,16 @@ async function run() {
 
   await test('GET /analytics/pipeline → 200', async () => {
     const r = await api('GET', '/analytics/pipeline', adminToken)
+    assertStatus(r.status, 200)
+  })
+
+  await test('GET /analytics/revenue → 200', async () => {
+    const r = await api('GET', '/analytics/revenue', adminToken)
+    assertStatus(r.status, 200)
+  })
+
+  await test('GET /analytics/forecasting/weighted-pipeline → 200', async () => {
+    const r = await api('GET', '/analytics/forecasting/weighted-pipeline', adminToken)
     assertStatus(r.status, 200)
   })
 

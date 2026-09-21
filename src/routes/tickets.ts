@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
-import { db, toDocs, toDoc, countQuery, now } from '../lib/firebase.js'
+import { db, toDocs, toDoc, pagedList, now } from '../lib/firebase.js'
 import { authenticate } from '../middleware/authenticate.js'
 
 const createBody = z.object({
@@ -28,19 +28,18 @@ export async function ticketsRoutes(app: FastifyInstance) {
   app.get('/', { preHandler: authenticate }, async (request, reply) => {
     const q = request.query as Record<string, string>
     const page = Math.max(1, parseInt(q.page ?? '1', 10))
-    const pageSize = Math.min(100, Math.max(1, parseInt(q.pageSize ?? '20', 10)))
+    const pageSize = Math.min(500, Math.max(1, parseInt(q.pageSize ?? '20', 10)))
 
     let query = db.collection('tickets') as FirebaseFirestore.Query
+    const hasFilters = !!(q.status || q.priority || q.channel || q.assigneeId || q.customerId)
     if (q.status)     query = query.where('status', '==', q.status)
     if (q.priority)   query = query.where('priority', '==', q.priority)
     if (q.channel)    query = query.where('channel', '==', q.channel)
     if (q.assigneeId) query = query.where('assigneeId', '==', q.assigneeId)
     if (q.customerId) query = query.where('customerId', '==', q.customerId)
 
-    const total = await countQuery(query)
-    const snap = await query.orderBy('createdAt', 'desc').offset((page - 1) * pageSize).limit(pageSize).get()
-
-    return reply.send({ data: toDocs(snap), total, page, pageSize, totalPages: Math.ceil(total / pageSize) })
+    const { data, total } = await pagedList({ query, hasFilters, orderField: 'createdAt', page, pageSize })
+    return reply.send({ data, total, page, pageSize, totalPages: Math.ceil(total / pageSize) })
   })
 
   // POST /api/v1/tickets

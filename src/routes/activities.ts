@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
-import { db, toDocs, toDoc, countQuery, now } from '../lib/firebase.js'
+import { db, toDocs, toDoc, pagedList, now } from '../lib/firebase.js'
 import { authenticate } from '../middleware/authenticate.js'
 
 const createBody = z.object({
@@ -9,11 +9,20 @@ const createBody = z.object({
   description: z.string().optional(),
   owner: z.string().min(1),
   completed: z.boolean().default(false),
-  dueDate: z.string().datetime({ offset: true }).optional(),
+  // Accept empty string (→ undefined), date-only "YYYY-MM-DD" (→ midnight UTC), or full ISO datetime
+  dueDate: z.preprocess(
+    v => {
+      if (v == null || v === '') return undefined
+      if (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v)) return `${v}T00:00:00.000Z`
+      return v
+    },
+    z.string().datetime({ offset: true }).optional(),
+  ),
   priority: z.enum(['low', 'medium', 'high']).optional(),
-  relatedTo: z.string().min(1),
-  relatedType: z.enum(['customer', 'lead', 'deal']),
-  relatedName: z.string().trim().min(1),
+  // Activities can be standalone (personal tasks) or linked to an entity
+  relatedTo:   z.string().min(1).optional(),
+  relatedType: z.enum(['customer', 'lead', 'deal']).optional(),
+  relatedName: z.string().trim().optional(),
 })
 
 const updateBody = createBody.partial()
@@ -23,19 +32,18 @@ export async function activitiesRoutes(app: FastifyInstance) {
   app.get('/', { preHandler: authenticate }, async (request, reply) => {
     const q = request.query as Record<string, string>
     const page = Math.max(1, parseInt(q.page ?? '1', 10))
-    const pageSize = Math.min(100, Math.max(1, parseInt(q.pageSize ?? '20', 10)))
+    const pageSize = Math.min(500, Math.max(1, parseInt(q.pageSize ?? '20', 10)))
 
     let query = db.collection('activities') as FirebaseFirestore.Query
+    const hasFilters = !!(q.relatedTo || q.relatedType || q.type || q.owner || q.completed !== undefined)
     if (q.relatedTo)   query = query.where('relatedTo', '==', q.relatedTo)
     if (q.relatedType) query = query.where('relatedType', '==', q.relatedType)
     if (q.type)        query = query.where('type', '==', q.type)
     if (q.owner)       query = query.where('owner', '==', q.owner)
     if (q.completed !== undefined) query = query.where('completed', '==', q.completed === 'true')
 
-    const total = await countQuery(query)
-    const snap = await query.orderBy('createdAt', 'desc').offset((page - 1) * pageSize).limit(pageSize).get()
-
-    return reply.send({ data: toDocs(snap), total, page, pageSize, totalPages: Math.ceil(total / pageSize) })
+    const { data, total } = await pagedList({ query, hasFilters, orderField: 'createdAt', page, pageSize })
+    return reply.send({ data, total, page, pageSize, totalPages: Math.ceil(total / pageSize) })
   })
 
   // POST /api/v1/activities

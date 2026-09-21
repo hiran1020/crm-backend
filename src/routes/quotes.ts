@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
-import { db, toDocs, toDoc, countQuery, now } from '../lib/firebase.js'
+import { db, toDocs, toDoc, pagedList, now } from '../lib/firebase.js'
 import { authenticate } from '../middleware/authenticate.js'
 import { writeAudit } from '../lib/audit.js'
 
@@ -32,17 +32,16 @@ export async function quotesRoutes(app: FastifyInstance) {
   app.get('/', { preHandler: authenticate }, async (request, reply) => {
     const q = request.query as Record<string, string>
     const page = Math.max(1, parseInt(q.page ?? '1', 10))
-    const pageSize = Math.min(100, Math.max(1, parseInt(q.pageSize ?? '20', 10)))
+    const pageSize = Math.min(500, Math.max(1, parseInt(q.pageSize ?? '20', 10)))
 
     let query = db.collection('quotes') as FirebaseFirestore.Query
+    const hasFilters = !!(q.status || q.dealId || q.customerId)
     if (q.status)     query = query.where('status', '==', q.status)
     if (q.dealId)     query = query.where('dealId', '==', q.dealId)
     if (q.customerId) query = query.where('customerId', '==', q.customerId)
 
-    const total = await countQuery(query)
-    const snap = await query.orderBy('createdAt', 'desc').offset((page - 1) * pageSize).limit(pageSize).get()
-
-    return reply.send({ data: toDocs(snap), total, page, pageSize, totalPages: Math.ceil(total / pageSize) })
+    const { data, total } = await pagedList({ query, hasFilters, orderField: 'createdAt', page, pageSize })
+    return reply.send({ data, total, page, pageSize, totalPages: Math.ceil(total / pageSize) })
   })
 
   // POST /api/v1/quotes

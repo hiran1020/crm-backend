@@ -21,6 +21,7 @@ import { workflowsRoutes } from './routes/workflows.js'
 import { auditLogRoutes } from './routes/audit-log.js'
 import { webhooksRoutes } from './routes/webhooks.js'
 import { attachmentsRoutes } from './routes/attachments.js'
+import { bulkImportRoutes } from './routes/bulk-import.js'
 
 export async function buildApp() {
   const app = Fastify({
@@ -81,6 +82,7 @@ export async function buildApp() {
       await v1.register(attachmentsRoutes,   { prefix: '/attachments' })
       await v1.register(notificationsRoutes, { prefix: '/notifications' })
       await v1.register(analyticsRoutes,     { prefix: '/analytics' })
+      await v1.register(bulkImportRoutes,   { prefix: '/bulk-import' })
     }, { prefix: '/v1' })
   }, { prefix: '/api' })
 

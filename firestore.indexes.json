@@ -1,0 +1,112 @@
+{
+  "indexes": [
+    { "collectionGroup": "activities", "queryScope": "COLLECTION", "fields": [
+        { "fieldPath": "completed",   "order": "ASCENDING" },
+        { "fieldPath": "createdAt",   "order": "DESCENDING" }
+    ]},
+    { "collectionGroup": "activities", "queryScope": "COLLECTION", "fields": [
+        { "fieldPath": "type",        "order": "ASCENDING" },
+        { "fieldPath": "createdAt",   "order": "DESCENDING" }
+    ]},
+    { "collectionGroup": "activities", "queryScope": "COLLECTION", "fields": [
+        { "fieldPath": "owner",       "order": "ASCENDING" },
+        { "fieldPath": "createdAt",   "order": "DESCENDING" }
+    ]},
+    { "collectionGroup": "activities", "queryScope": "COLLECTION", "fields": [
+        { "fieldPath": "relatedTo",   "order": "ASCENDING" },
+        { "fieldPath": "createdAt",   "order": "DESCENDING" }
+    ]},
+    { "collectionGroup": "activities", "queryScope": "COLLECTION", "fields": [
+        { "fieldPath": "relatedType", "order": "ASCENDING" },
+        { "fieldPath": "createdAt",   "order": "DESCENDING" }
+    ]},
+    { "collectionGroup": "activities", "queryScope": "COLLECTION", "fields": [
+        { "fieldPath": "completed",   "order": "ASCENDING" },
+        { "fieldPath": "type",        "order": "ASCENDING" },
+        { "fieldPath": "createdAt",   "order": "DESCENDING" }
+    ]},
+    { "collectionGroup": "activities", "queryScope": "COLLECTION", "fields": [
+        { "fieldPath": "relatedTo",   "order": "ASCENDING" },
+        { "fieldPath": "type",        "order": "ASCENDING" },
+        { "fieldPath": "createdAt",   "order": "DESCENDING" }
+    ]},
+    { "collectionGroup": "activities", "queryScope": "COLLECTION", "fields": [
+        { "fieldPath": "relatedTo",   "order": "ASCENDING" },
+        { "fieldPath": "completed",   "order": "ASCENDING" },
+        { "fieldPath": "createdAt",   "order": "DESCENDING" }
+    ]},
+    { "collectionGroup": "leads", "queryScope": "COLLECTION", "fields": [
+        { "fieldPath": "status",      "order": "ASCENDING" },
+        { "fieldPath": "createdAt",   "order": "DESCENDING" }
+    ]},
+    { "collectionGroup": "leads", "queryScope": "COLLECTION", "fields": [
+        { "fieldPath": "source",      "order": "ASCENDING" },
+        { "fieldPath": "createdAt",   "order": "DESCENDING" }
+    ]},
+    { "collectionGroup": "leads", "queryScope": "COLLECTION", "fields": [
+        { "fieldPath": "ownerId",     "order": "ASCENDING" },
+        { "fieldPath": "createdAt",   "order": "DESCENDING" }
+    ]},
+    { "collectionGroup": "leads", "queryScope": "COLLECTION", "fields": [
+        { "fieldPath": "tagIds",      "arrayConfig": "CONTAINS" },
+        { "fieldPath": "createdAt",   "order": "DESCENDING" }
+    ]},
+    { "collectionGroup": "customers", "queryScope": "COLLECTION", "fields": [
+        { "fieldPath": "status",      "order": "ASCENDING" },
+        { "fieldPath": "lastName",    "order": "ASCENDING" }
+    ]},
+    { "collectionGroup": "customers", "queryScope": "COLLECTION", "fields": [
+        { "fieldPath": "ownerId",     "order": "ASCENDING" },
+        { "fieldPath": "lastName",    "order": "ASCENDING" }
+    ]},
+    { "collectionGroup": "customers", "queryScope": "COLLECTION", "fields": [
+        { "fieldPath": "tagIds",      "arrayConfig": "CONTAINS" },
+        { "fieldPath": "lastName",    "order": "ASCENDING" }
+    ]},
+    { "collectionGroup": "deals", "queryScope": "COLLECTION", "fields": [
+        { "fieldPath": "stage",       "order": "ASCENDING" },
+        { "fieldPath": "createdAt",   "order": "DESCENDING" }
+    ]},
+    { "collectionGroup": "deals", "queryScope": "COLLECTION", "fields": [
+        { "fieldPath": "ownerId",     "order": "ASCENDING" },
+        { "fieldPath": "createdAt",   "order": "DESCENDING" }
+    ]},
+    { "collectionGroup": "deals", "queryScope": "COLLECTION", "fields": [
+        { "fieldPath": "customerId",  "order": "ASCENDING" },
+        { "fieldPath": "createdAt",   "order": "DESCENDING" }
+    ]},
+    { "collectionGroup": "tickets", "queryScope": "COLLECTION", "fields": [
+        { "fieldPath": "status",      "order": "ASCENDING" },
+        { "fieldPath": "createdAt",   "order": "DESCENDING" }
+    ]},
+    { "collectionGroup": "tickets", "queryScope": "COLLECTION", "fields": [
+        { "fieldPath": "priority",    "order": "ASCENDING" },
+        { "fieldPath": "createdAt",   "order": "DESCENDING" }
+    ]},
+    { "collectionGroup": "tickets", "queryScope": "COLLECTION", "fields": [
+        { "fieldPath": "channel",     "order": "ASCENDING" },
+        { "fieldPath": "createdAt",   "order": "DESCENDING" }
+    ]},
+    { "collectionGroup": "tickets", "queryScope": "COLLECTION", "fields": [
+        { "fieldPath": "assigneeId",  "order": "ASCENDING" },
+        { "fieldPath": "createdAt",   "order": "DESCENDING" }
+    ]},
+    { "collectionGroup": "tickets", "queryScope": "COLLECTION", "fields": [
+        { "fieldPath": "customerId",  "order": "ASCENDING" },
+        { "fieldPath": "createdAt",   "order": "DESCENDING" }
+    ]},
+    { "collectionGroup": "quotes", "queryScope": "COLLECTION", "fields": [
+        { "fieldPath": "status",      "order": "ASCENDING" },
+        { "fieldPath": "createdAt",   "order": "DESCENDING" }
+    ]},
+    { "collectionGroup": "quotes", "queryScope": "COLLECTION", "fields": [
+        { "fieldPath": "dealId",      "order": "ASCENDING" },
+        { "fieldPath": "createdAt",   "order": "DESCENDING" }
+    ]},
+    { "collectionGroup": "quotes", "queryScope": "COLLECTION", "fields": [
+        { "fieldPath": "customerId",  "order": "ASCENDING" },
+        { "fieldPath": "createdAt",   "order": "DESCENDING" }
+    ]}
+  ],
+  "fieldOverrides": []
+}
