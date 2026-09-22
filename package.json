@@ -12,7 +12,8 @@
     "emulator": "npx firebase-tools emulators:start --import=.firebase-data --export-on-exit",
     "emulator:seed": "FIREBASE_EMULATOR=true tsx src/scripts/seed-emulator.ts",
     "emulator:reset": "rm -rf .firebase-data",
-    "test:integration": "FIREBASE_EMULATOR=true tsx src/scripts/integration-test.ts"
+    "test:integration": "FIREBASE_EMULATOR=true tsx src/scripts/integration-test.ts",
+    "seed:prod": "tsx src/scripts/seed-prod.ts"
   },
   "dependencies": {
     "@fastify/cookie": "^11.0.2",
