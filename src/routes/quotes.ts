@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
-import { db, toDocs, toDoc, pagedList, now } from '../lib/firebase.js'
+import { db, toDoc, pagedList, now } from '../lib/firebase.js'
 import { authenticate } from '../middleware/authenticate.js'
 import { writeAudit } from '../lib/audit.js'
 
@@ -25,7 +25,13 @@ const createBody = z.object({
   lineItems: z.array(lineItemSchema).min(1),
 })
 
-const updateBody = createBody.partial()
+// In a PATCH, an empty lineItems array means "don't touch lineItems" — strip it before validation.
+const updateBody = createBody.partial().extend({
+  lineItems: z.preprocess(
+    v => (Array.isArray(v) && v.length === 0 ? undefined : v),
+    z.array(lineItemSchema).min(1).optional(),
+  ),
+})
 
 export async function quotesRoutes(app: FastifyInstance) {
   // GET /api/v1/quotes
@@ -76,10 +82,10 @@ export async function quotesRoutes(app: FastifyInstance) {
     const snap = await db.collection('quotes').doc(id).get()
     if (!snap.exists) return reply.status(404).send({ error: 'Quote not found' })
     const before = snap.data()
+    const updatedAt = new Date().toISOString()
     await db.collection('quotes').doc(id).update({ ...result.data, updatedAt: now() })
-    const updated = toDoc(await db.collection('quotes').doc(id).get())
     writeAudit({ entityType: 'quote', entityId: id, action: 'updated', actorId: request.user.id, before, after: result.data })
-    return reply.send(updated)
+    return reply.send({ id, ...snap.data(), ...result.data, updatedAt })
   })
 
   // DELETE /api/v1/quotes/:id
@@ -98,8 +104,9 @@ export async function quotesRoutes(app: FastifyInstance) {
     const { id } = request.params as { id: string }
     const snap = await db.collection('quotes').doc(id).get()
     if (!snap.exists) return reply.status(404).send({ error: 'Quote not found' })
+    const updatedAt = new Date().toISOString()
     await db.collection('quotes').doc(id).update({ status: 'Sent', updatedAt: now() })
-    return reply.send(toDoc(await db.collection('quotes').doc(id).get()))
+    return reply.send({ id, ...snap.data(), status: 'Sent', updatedAt })
   })
 
   // POST /api/v1/quotes/:id/accept
@@ -107,8 +114,9 @@ export async function quotesRoutes(app: FastifyInstance) {
     const { id } = request.params as { id: string }
     const snap = await db.collection('quotes').doc(id).get()
     if (!snap.exists) return reply.status(404).send({ error: 'Quote not found' })
+    const updatedAt = new Date().toISOString()
     await db.collection('quotes').doc(id).update({ status: 'Accepted', updatedAt: now() })
-    return reply.send(toDoc(await db.collection('quotes').doc(id).get()))
+    return reply.send({ id, ...snap.data(), status: 'Accepted', updatedAt })
   })
 
   // POST /api/v1/quotes/:id/reject
@@ -116,7 +124,8 @@ export async function quotesRoutes(app: FastifyInstance) {
     const { id } = request.params as { id: string }
     const snap = await db.collection('quotes').doc(id).get()
     if (!snap.exists) return reply.status(404).send({ error: 'Quote not found' })
+    const updatedAt = new Date().toISOString()
     await db.collection('quotes').doc(id).update({ status: 'Rejected', updatedAt: now() })
-    return reply.send(toDoc(await db.collection('quotes').doc(id).get()))
+    return reply.send({ id, ...snap.data(), status: 'Rejected', updatedAt })
   })
 }
