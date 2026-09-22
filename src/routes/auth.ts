@@ -41,15 +41,20 @@ export async function authRoutes(app: FastifyInstance) {
 
   // GET /api/v1/auth/me — return the current user's profile from Firestore
   app.get('/me', { preHandler: authenticate }, async (request, reply) => {
-    const snap = await db.collection('users').doc(request.user.id).get()
+    const ref = db.collection('users').doc(request.user.id)
+    const snap = await ref.get()
     const profile = toDoc(snap)
+
+    // Stamp lastLoginAt — fire-and-forget, don't block the response
+    void ref.set({ lastLoginAt: now() }, { merge: true })
+
     if (!profile) {
-      // First login — build a minimal profile from the token
       return reply.send({
         id: request.user.id,
         email: request.user.email,
         name: request.user.name,
         role: request.user.role,
+        lastLoginAt: null,
       })
     }
     return reply.send(profile)

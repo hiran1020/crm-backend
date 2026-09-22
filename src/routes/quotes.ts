@@ -16,7 +16,7 @@ const createBody = z.object({
   dealTitle: z.string().optional(),
   customerId: z.string().optional(),
   customerName: z.string().optional(),
-  status: z.enum(['Draft', 'Sent', 'Accepted', 'Rejected', 'Expired']).default('Draft'),
+  status: z.enum(['Draft', 'Sent', 'Viewed', 'Accepted', 'Declined', 'Rejected', 'Expired']).default('Draft'),
   validUntil: z.string().datetime({ offset: true }).optional(),
   notes: z.string().optional(),
   subtotal: z.number().min(0),
@@ -125,7 +125,7 @@ export async function quotesRoutes(app: FastifyInstance) {
     const snap = await db.collection('quotes').doc(id).get()
     if (!snap.exists) return reply.status(404).send({ error: 'Quote not found' })
     const updatedAt = new Date().toISOString()
-    await db.collection('quotes').doc(id).update({ status: 'Rejected', updatedAt: now() })
-    return reply.send({ id, ...snap.data(), status: 'Rejected', updatedAt })
+    await db.collection('quotes').doc(id).update({ status: 'Declined', updatedAt: now() })
+    return reply.send({ id, ...snap.data(), status: 'Declined', updatedAt })
   })
 }
