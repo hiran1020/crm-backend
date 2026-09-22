@@ -18,8 +18,12 @@ export async function savedViewsRoutes(app: FastifyInstance) {
     const q = request.query as Record<string, string>
     let query = db.collection('saved_views') as FirebaseFirestore.Query
     if (q.entityType) query = query.where('entityType', '==', q.entityType)
-    const snap = await query.orderBy('name').get()
-    return reply.send({ data: toDocs(snap) })
+    // Sort in memory — avoids composite index for where+orderBy
+    const snap = await query.get()
+    const data = toDocs(snap).sort((a, b) =>
+      String(a.name).localeCompare(String(b.name)),
+    )
+    return reply.send({ data })
   })
 
   // POST /api/v1/saved-views
@@ -75,8 +79,9 @@ export async function savedViewsRoutes(app: FastifyInstance) {
         .get()
       await Promise.all(others.docs.filter(d => d.id !== id).map(d => d.ref.update({ isDefault: false })))
     }
+    const updatedAt = new Date().toISOString()
     await db.collection('saved_views').doc(id).update({ ...result.data, updatedAt: now() })
-    return reply.send(toDoc(await db.collection('saved_views').doc(id).get()))
+    return reply.send({ id, ...snap.data(), ...result.data, updatedAt })
   })
 
   // DELETE /api/v1/saved-views/:id
