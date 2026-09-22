@@ -33,6 +33,14 @@ export async function buildApp() {
     },
   })
 
+  // Allow DELETE/PUT/PATCH requests that send Content-Type: application/json with no body.
+  // Fastify 5 throws FST_ERR_CTP_EMPTY_JSON_BODY for these by default.
+  app.addContentTypeParser('application/json', { parseAs: 'string' }, (_req, body, done) => {
+    if (!body) { done(null, {}); return }
+    try { done(null, JSON.parse(body as string)) }
+    catch (err) { done(err as Error, undefined) }
+  })
+
   // Core plugins
   await app.register(corsPlugin)
 

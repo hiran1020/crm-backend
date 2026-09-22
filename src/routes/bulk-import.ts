@@ -276,4 +276,25 @@ export async function bulkImportRoutes(app: FastifyInstance) {
     if (!job) return reply.status(404).send({ error: 'Import job not found' })
     return reply.send(snapshot(jobId, job))
   })
+
+  // GET /api/v1/bulk-import/:jobId/errors.csv  — download error log as CSV
+  app.get('/:jobId/errors.csv', { preHandler: authenticate }, async (request, reply) => {
+    const { jobId } = request.params as { jobId: string }
+    const job = jobs.get(jobId)
+    if (!job) return reply.status(404).send({ error: 'Import job not found' })
+
+    const csvEscape = (s: string) => `"${s.replace(/"/g, '""')}"`
+
+    const lines = [
+      ['row', 'identifier', 'error'].join(','),
+      ...job.errors.map(e =>
+        [e.index + 1, csvEscape(e.identifier), csvEscape(e.message)].join(',')
+      ),
+    ]
+
+    return reply
+      .header('Content-Type', 'text/csv; charset=utf-8')
+      .header('Content-Disposition', `attachment; filename="import-errors-${jobId}.csv"`)
+      .send(lines.join('\r\n'))
+  })
 }
