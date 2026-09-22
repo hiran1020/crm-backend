@@ -22,6 +22,9 @@ import { auditLogRoutes } from './routes/audit-log.js'
 import { webhooksRoutes } from './routes/webhooks.js'
 import { attachmentsRoutes } from './routes/attachments.js'
 import { bulkImportRoutes } from './routes/bulk-import.js'
+import { goalsRoutes } from './routes/goals.js'
+import { renewalsRoutes } from './routes/renewals.js'
+import { savedViewsRoutes } from './routes/saved-views.js'
 
 export async function buildApp() {
   const app = Fastify({
@@ -91,6 +94,9 @@ export async function buildApp() {
       await v1.register(notificationsRoutes, { prefix: '/notifications' })
       await v1.register(analyticsRoutes,     { prefix: '/analytics' })
       await v1.register(bulkImportRoutes,   { prefix: '/bulk-import' })
+      await v1.register(goalsRoutes,        { prefix: '/goals' })
+      await v1.register(renewalsRoutes,     { prefix: '/renewals' })
+      await v1.register(savedViewsRoutes,   { prefix: '/saved-views' })
     }, { prefix: '/v1' })
   }, { prefix: '/api' })
 
